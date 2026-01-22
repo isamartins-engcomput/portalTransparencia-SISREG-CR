@@ -2,10 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import requests
 import json
-import os
-from dotenv import load_dotenv
 
-load_dotenv()
 app = FastAPI()
 
 app.add_middleware(
@@ -17,12 +14,12 @@ app.add_middleware(
 
 URL_BASE_SISREG = "https://sisreg-es.saude.gov.br/solicitacao-ambulatorial-ms-tres-lagoas"
 
-@app.get("/api/consulta/{cpf}")
+@app.get("/api/consulta/{cpf_usuario}")
 
-def consultar_cpf(cpf: str):
+def consultar_cpf(cpf_usuario: str):
     
-    USUARIO = os.getenv("SISREG_USUARIO")
-    SENHA = os.getenv("SISREG_SENHA")
+    USUARIO = "jose.almeida"
+    SENHA = "gn6Z7tEogEU6GAHOQPRe"
 
     print("\n" + "="*60)
     print("|=========| NOVA REQUISIÇÃO RECEBIDA DO FRONTEND |=========|")
@@ -30,27 +27,18 @@ def consultar_cpf(cpf: str):
 
     try:
 
-        cpf_limpo = cpf.replace(".", "").replace("-", "")
-        print(f"[INFO] CPF Original: {cpf}")
+        cpf_limpo = cpf_usuario.replace(".", "").replace("-", "")
+        print(f"[INFO] CPF Original: {cpf_usuario}")
         print(f"[INFO] CPF Limpo para busca: {cpf_limpo}")
 
         payload = {
             "query": {
                 "bool": {
                     "must": [
-                        {"term": {"cpf_usuario.keyword": cpf_limpo}}
+                        {"term": {"cpf_usuario": cpf_limpo}}
                     ]
                 }
             },
-            "_source": [
-                 "status_solicitacao", 
-                 "data_solicitacao", 
-                 "descricao_procedimento",
-                 "nome_unidade_solicitante",
-                 "classificacao_risco",
-                 "no_usuario",
-                 "dt_nascimento_usuario"
-            ]
         }
 
         if (cpf_limpo == "000"):
@@ -63,7 +51,7 @@ def consultar_cpf(cpf: str):
                     "descricao_procedimento": "CONSULTA CARDIOLÓGICA",
                     "status_solicitacao": "AGENDADO",
                     "nome_unidade_solicitante": "UBS VILA PILOTO",
-                    "classificacao_risco": "AMARELO"
+                    "codigo_classificacao_risco": "1"
                 }
             },
             {
@@ -74,7 +62,7 @@ def consultar_cpf(cpf: str):
                     "descricao_procedimento": "EXAME DE SANGUE COMPLETO",
                     "status_solicitacao": "PENDENTE",
                     "nome_unidade_solicitante": "HOSPITAL NOSSA SENHORA AUXILIADORA",
-                    "classificacao_risco": "AZUL"
+                    "codigo_classificacao_risco": "4"
                 }
             }]
         
