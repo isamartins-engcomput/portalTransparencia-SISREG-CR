@@ -1,7 +1,11 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from dotenv import load_dotenv
+import os
 import requests
 import json
+
+load_dotenv()
 
 app = FastAPI()
 
@@ -15,11 +19,10 @@ app.add_middleware(
 URL_BASE_SISREG = "https://sisreg-es.saude.gov.br/solicitacao-ambulatorial-ms-tres-lagoas"
 
 @app.get("/api/consulta/{cpf_usuario}")
-
 def consultar_cpf(cpf_usuario: str):
     
-    USUARIO = "jose.almeida"
-    SENHA = "gn6Z7tEogEU6GAHOQPRe"
+    USUARIO = os.getenv("SISREG_USUARIO")
+    SENHA = os.getenv("SISREG_SENHA")
 
     print("\n" + "="*60)
     print("|=========| NOVA REQUISIÇÃO RECEBIDA DO FRONTEND |=========|")
@@ -39,44 +42,19 @@ def consultar_cpf(cpf_usuario: str):
                     ]
                 }
             },
+            "size": 10000
         }
-
-        if (cpf_limpo == "000"):
-            print("[TESTE] Retornando dados fictícios para teste de layout...")
-            return [{
-                "_source": {
-                    "no_usuario": "ISADORA MARTINS TESTE",
-                    "dt_nascimento_usuario": "2006-06-19",
-                    "data_solicitacao": "2025-10-15",
-                    "descricao_procedimento": "CONSULTA CARDIOLÓGICA",
-                    "status_solicitacao": "AGENDADO",
-                    "nome_unidade_solicitante": "UBS VILA PILOTO",
-                    "codigo_classificacao_risco": "1"
-                }
-            },
-            {
-                "_source": {
-                    "no_usuario": "ISADORA MARTINS TESTE",
-                    "dt_nascimento_usuario": "2006-06-19",
-                    "data_solicitacao": "2025-11-01",
-                    "descricao_procedimento": "EXAME DE SANGUE COMPLETO",
-                    "status_solicitacao": "PENDENTE",
-                    "nome_unidade_solicitante": "HOSPITAL NOSSA SENHORA AUXILIADORA",
-                    "codigo_classificacao_risco": "4"
-                }
-            }]
         
         endpoint_final = URL_BASE_SISREG + "/_search"
         print(f"[INFO] Conectando ao SISREG...")
         print(f"[INFO] URL Alvo: {endpoint_final}")
-        print(f"[INFO] Usuário: {USUARIO}")
 
         response = requests.post(
             endpoint_final, 
             json=payload, 
             headers={"Content-Type": "application/json"}, 
             auth=(USUARIO,SENHA), 
-            timeout=20
+            timeout=30
         )
         
         print(f"[RESPOSTA] Status Code: {response.status_code}")
