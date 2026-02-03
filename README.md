@@ -6,6 +6,8 @@
 >
 > **📍 Democratizando o acesso à saúde pública com tecnologia e transparência!**
 
+https://github.com/user-attachments/assets/812aed23-ff29-4fd6-a44a-10c3a24c53ca
+
 ---
 
 ## 📸 Sobre o Projeto
@@ -163,10 +165,11 @@ npm run dev
 
 * GitHub: [isamartins-engcomput](https://github.com/isamartins-engcomput)
 * LinkedIn: [Isadora Martins](https://www.linkedin.com/in/isadora-martins-611478332)
+
 * E-mail pessoal: [isadoramartins1906@gmail.com](mailto:isadoramartins1906@gmail.com)
 * E-mail institucional: [isadora.martins2@estudante.ifms.edu.br](mailto:isadora.martins2@estudante.ifms.edu.br)
 
-#### Apoio:
+### 🫂 Apoio
 
 Este software é uma entrega técnica vinculada ao:
 
@@ -178,13 +181,15 @@ O projeto visa fortalecer a integração ensino-serviço-comunidade, aplicando c
 
 ---
 
-> 🫱🏼‍🫲🏻 **Contribua com o Projeto**
->
+## 🫱🏼‍🫲🏻 **Contribua com o Projeto**
+
 > Este software é fruto de muita dedicação e estudo, desenvolvido com o propósito de servir à comunidade.
 >
 > Acredito que o conhecimento cresce quando compartilhado, portanto, se você tem ideias para torná-lo mais acessível, rápido ou seguro, sua ajuda é fundamental.
 >
-> Sinta-se à vontade para contribuir!
+> Sinta-se à vontade para contribuir! :)
+
+
 
 <p align="center">
   <em> ✨ Tecnologia é a ferramenta, cuidar de pessoas é a missão! ✨</em><br>
