@@ -424,6 +424,15 @@ h1, h2, h3, h4, h5, h6, strong, b,
 .nav-btn { padding: 0 15px; font-size: 0.85rem; text-transform: uppercase; }
 .page-btn:disabled { background-color: var(--gray-200); color: var(--gray-500); border-color: var(--gray-300); cursor: not-allowed; transform: none; }
 
+.legend-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+.ind-sucesso { background-color: var(--cor-sucesso); }
+.ind-perigo { background-color: var(--cor-perigo); }
+.ind-alerta { background-color: var(--cor-alerta); }
+.ind-info { background-color: var(--cor-info); }
+.ind-laranja { background-color: var(--cor-laranja); }
+.ind-rosa { background-color: var(--cor-rosa); }
+.ind-neutro { background-color: var(--cor-neutro); }
+
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 @keyframes slideUp { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
 

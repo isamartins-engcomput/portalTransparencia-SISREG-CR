@@ -746,12 +746,12 @@ function App() {
               <div className="legend-section">
                 <span className="legend-title">Legenda de Situação</span>
                 <div className="legend-grid">
-                  <div className="legend-item"><div className="legend-header"><span className="emoji-fix">🟡</span> PENDENTE</div></div>
-                  <div className="legend-item"><div className="legend-header"><span className="emoji-fix">🟢</span> CONFIRMADO / AUTORIZADO</div></div>
-                  <div className="legend-item"><div className="legend-header"><span className="emoji-fix">🔴</span> NEGADO / CANCELADO</div></div>
-                  <div className="legend-item"><div className="legend-header"><span className="emoji-fix">🔁</span> DEVOLVIDO / REENVIADO</div></div>
-                  <div className="legend-item"><div className="legend-header"><span className="emoji-fix">⚠️</span> FALTA / AUSÊNCIA</div></div>
-                  <div className="legend-item"><div className="legend-header"><span className="emoji-fix">🔵</span> AGENDAMENTO FUTURO</div></div>
+                  <div className="legend-item"><div className="legend-header"><span className="legend-dot ind-alerta"></span><span className="emoji-fix">🟡</span> PENDENTE</div></div>
+                  <div className="legend-item"><div className="legend-header"><span className="legend-dot ind-sucesso"></span><span className="emoji-fix">🟢</span> CONFIRMADO / AUTORIZADO</div></div>
+                  <div className="legend-item"><div className="legend-header"><span className="legend-dot ind-perigo"></span><span className="emoji-fix">🔴</span> NEGADO / CANCELADO</div></div>
+                  <div className="legend-item"><div className="legend-header"><span className="legend-dot ind-laranja"></span><span className="emoji-fix">🔁</span> DEVOLVIDO / REENVIADO</div></div>
+                  <div className="legend-item"><div className="legend-header"><span className="legend-dot ind-rosa"></span><span className="emoji-fix">⚠️</span> FALTA / AUSÊNCIA</div></div>
+                  <div className="legend-item"><div className="legend-header"><span className="legend-dot ind-info"></span><span className="emoji-fix">🔵</span> AGENDAMENTO FUTURO</div></div>
                 </div>
               </div>
             </div>
