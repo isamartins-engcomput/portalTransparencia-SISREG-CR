@@ -5,6 +5,8 @@ import logoPrefeitura from './assets/logo-prefeitura.png'
 
 const ITENS_POR_PAGINA = 5;
 
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
+
 const gerarIniciais = (nomeCompleto) => {
   if (!nomeCompleto) return 'Não informado';
   const partes = nomeCompleto.trim().split(' ');
@@ -53,10 +55,168 @@ const formatarDataHora = (dataISO) => {
   } catch (e) { return dataISO; }
 };
 
-const formatarCPF = (cpf) => {
+const isDataFutura = (dataISO) => {
+  if (!dataISO) return false;
+  try {
+    const dataAgendamento = new Date(dataISO);
+    const agora = new Date();
+    return dataAgendamento > agora;
+  } catch (e) {
+    return false;
+  }
+};
+
+const formatarTelefone = (tel) => {
+  if (!tel) return '';
+  
+  const partes = String(tel).split('/');
+  
+  const formatarParte = (parte) => {
+    const limpo = parte.replace(/\D/g, '');
+    
+    if (limpo.length === 11) return `(${limpo.slice(0, 2)}) ${limpo.slice(2, 7)}-${limpo.slice(7)}`;
+    if (limpo.length === 10) return `(${limpo.slice(0, 2)}) ${limpo.slice(2, 6)}-${limpo.slice(6)}`;
+    if (limpo.length === 9) return `${limpo.slice(0, 5)}-${limpo.slice(5)}`;
+    if (limpo.length === 8) return `(67) ${limpo.slice(0, 4)}-${limpo.slice(4)}`;
+    
+    return parte.trim();
+  };
+  
+  return partes.map(p => formatarParte(p)).join(' / ');
+};
+
+const obterNumeroLink = (tel) => {
+  if (!tel) return '';
+  
+  const limpo = String(tel).split('/')[0].replace(/\D/g, '');
+  
+  if (limpo.length === 8 || limpo.length === 9) {
+    return `067${limpo}`;
+  }
+  
+  if (limpo.length === 10 || limpo.length === 11) {
+    return `0${limpo}`;
+  }
+
+  return limpo;
+};
+
+const mascararCPF = (cpf) => {
   const limpo = cpf.replace(/\D/g, '');
-  return limpo.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4");
+  return limpo.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.XXX.XXX-$4");
 }
+
+const renderSkeleton = () => (
+    <div className="skeleton-container">
+      {[1, 2, 3].map((i) => (
+        <div key={i} className="skeleton-card">
+          <div className="skeleton-title"></div>
+          <div className="skeleton-line w-70"></div>
+          <div className="skeleton-line w-50"></div>
+          <div className="skeleton-line w-80"></div>
+        </div>
+      ))}
+    </div>
+  );
+
+const extrairTextoLaudo = (laudo_obj) => {
+  if (!laudo_obj) return "";
+  
+  if (typeof laudo_obj === 'string') return laudo_obj;
+  
+  if (Array.isArray(laudo_obj)) {
+    return laudo_obj
+      .map(l => l.observacao || l.descricao || l.justificativa || "")
+      .filter(texto => texto && texto.trim() !== "")
+      .join(" | ");
+  }
+  
+  if (typeof laudo_obj === 'object') {
+    return laudo_obj.observacao || laudo_obj.descricao || laudo_obj.justificativa || "";
+  }
+  
+  return "";
+};
+
+const sanitizarMotivo = (textoRaw) => {
+  if (!textoRaw) return "";
+
+  let textoLimpo = String(textoRaw)
+    .replace(/[,;:]+\s*\./g, '.')
+    .replace(/\.\s*,/g, '.')
+    .replace(/\s+/g, ' ');
+
+  let partes = textoLimpo.split(/[|/.;?!]+/);
+
+  const blacklist = ["teste", "dsaodasodkasdok", "para teste", "apenas teste", "teste do sisreg", "ok", "cancelado para teste", "erro", "errado"];
+
+  let partesValidas = partes.map(p => p.trim().toLowerCase()).filter(parte => {
+    if (parte.length === 0) return false;
+    if (/^\d+$/.test(parte)) return false;
+    if (blacklist.includes(parte)) return false;
+
+    if (!parte.includes(' ')) {
+      if (/[bcdfghjklmnpqrstvwxz]{5,}/i.test(parte)) return false;
+      
+      if (parte.length > 25) return false;
+    }
+
+    return true;
+  });
+
+  if (partesValidas.length === 0) return "";
+
+  let sentencasUnicas = [];
+  for (let i = 0; i < partesValidas.length; i++) {
+    let s1 = partesValidas[i];
+    let isRedundant = false;
+    for (let j = 0; j < partesValidas.length; j++) {
+      if (i !== j) {
+        let s2 = partesValidas[j];
+        if (s2.includes(s1) && s2.length >= s1.length) {
+          if (s1 === s2 && i > j) isRedundant = true;
+          else if (s1 !== s2) isRedundant = true;
+        }
+      }
+    }
+    if (!isRedundant) sentencasUnicas.push(s1);
+  }
+
+  if (sentencasUnicas.length === 0) return "";
+
+  let textoFinal = sentencasUnicas.map(frase => {
+    return frase.charAt(0).toUpperCase() + frase.slice(1);
+  }).join('. ');
+
+  textoFinal = textoFinal.replace(/[.,\s]+$/, '') + ".";
+
+  return textoFinal;
+};
+
+const filtrarUltimos5Anos = (listaPedidos) => {
+  const anoAtual = new Date().getFullYear();
+  const anoLimite = anoAtual - 5; 
+
+  return listaPedidos.filter(item => {
+    const source = item._source || {};
+    
+    const dataReferencia = source.data_solicitacao || source.data_marcacao || source.data_atualizacao;
+    const anoStr = extrairAno(dataReferencia);
+    
+    if (!anoStr) return true; 
+    
+    const ano = parseInt(anoStr, 10);
+    
+    if (ano >= anoLimite) return true;
+    
+    const statusTraduzido = traduzirStatus(source.status_solicitacao);
+    const situacao = getSituacaoInfo(statusTraduzido);
+    
+    if (situacao.label === "PENDENTE") return true;
+
+    return false; 
+  });
+};
 
 const PLANILHA_STATUS = {
   "SOLICITAÇÃO / PENDENTE / REGULADOR": "Pendente de análise da regulação",
@@ -132,17 +292,15 @@ const LISTA_SITUACOES = [
   "🟢 CONFIRMADO / AUTORIZADO",
   "🔴 NEGADO / CANCELADO",
   "🔁 DEVOLVIDO / REENVIADO",
-  "⚠️ FALTA / AUSÊNCIA"
+  "⚠️ FALTA / AUSÊNCIA",
+  "🔵 AGENDAMENTO FUTURO"
 ];
 
 const getNomeProcedimento = (src) => {
   if (!src) return "Procedimento não informado";
 
-  const raw = src.no_procedimento || 
-              src.nome_procedimento || 
+  const raw = src.nome_procedimento || 
               src.descricao_procedimento || 
-              src.ds_procedimento || 
-              src.procedimentos?.[0]?.descricao_interno || 
               src.procedimentos?.[0]?.descricao_sigtap || 
               '';
 
@@ -165,7 +323,7 @@ const getNomeProcedimento = (src) => {
 
       if (src.procedimentos && Array.isArray(src.procedimentos)) {
           for (const item of src.procedimentos) {
-              const nomeItem = item.descricao_interno || item.descricao_sigtap || item.nome_procedimento;
+              const nomeItem = item.descricao_sigtap || item.nome_procedimento;
               
               if (nomeItem && !padroesGenericos.some(r => r.test(String(nomeItem)))) {
                   return nomeItem.trim();
@@ -259,21 +417,35 @@ function App() {
     setPaginaAtual(1)
 
     try {
-      const response = await axios.get(`http://localhost:8000/api/consulta/${cpf}`)
+      const response = await axios.get(`${API_BASE_URL}/consulta/${cpf.trim()}`, {
+        timeout: 15000 
+      });
       
       if (response.data.status === 'aguardando_validacao') {
         setSolicitandoValidacao(true);
       } 
       else if (Array.isArray(response.data) && response.data.length === 0) {
-        setErro('Nenhuma solicitação encontrada para este CPF.')
+        setErro('Não encontramos nenhuma solicitação ou agendamento para este CPF.');
       } 
       else {
-        setPedidos(response.data)
+        const dadosFiltrados = filtrarUltimos5Anos(response.data);
+        
+        if (dadosFiltrados.length === 0) {
+          setErro('Não encontramos nenhuma solicitação ativa para este CPF nos últimos 5 anos.');
+        } else {
+          setPedidos(dadosFiltrados);
+        }
       }
     } catch (error) {
-      setErro('Erro ao conectar com o servidor.')
+      if (error.code === 'ECONNABORTED') {
+        setErro('O sistema do governo está demorando muito para responder. Por favor, tente novamente em alguns minutos.');
+      } else if (!error.response) {
+        setErro('Falha na ligação. Verifique a sua internet ou tente novamente mais tarde.');
+      } else {
+        setErro('Ocorreu um erro ao consultar os dados. Tente novamente.');
+      }
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
   }
 
@@ -286,7 +458,7 @@ function App() {
     setErro('');
 
     try {
-      const response = await axios.get(`http://localhost:8000/api/consulta/${cpf}`, {
+      const response = await axios.get(`${API_BASE_URL}/consulta/${cpf.trim()}`, {
         params: { nome_mae: nomeMae }
       });
       
@@ -299,9 +471,16 @@ function App() {
           dados = []; 
       }
 
-      setPedidos(dados);
+      const dadosFiltrados = filtrarUltimos5Anos(dados);
+      setPedidos(dadosFiltrados);
+      
+      if (dadosFiltrados.length === 0) {
+          setErro('Não há solicitações ativas nos últimos 5 anos.');
+      }
+      
       setSolicitandoValidacao(false);
       setNomeMae('');
+      
     } catch (error) {
       if (error.response && error.response.status === 403) {
         setErro('Nome da mãe incorreto. Verifique e tente novamente.');
@@ -322,19 +501,15 @@ function App() {
 
   const ultimaAtualizacaoGeral = useMemo(() => {
     if (pedidos.length === 0) return null;
-    let maxDate = 0;
-    let dataFinal = null;
-    pedidos.forEach(item => {
-      const s = item._source || {};
-      const datasPossiveis = [s.data_atualizacao, s.data_atualizacao_marcacao, s.data_atualizacao_solicitacao, s.dt_atualizacao];
-      datasPossiveis.forEach(d => {
-        if (d) {
-          const timestamp = new Date(d).getTime();
-          if (!isNaN(timestamp) && timestamp > maxDate) { maxDate = timestamp; dataFinal = d; }
-        }
-      });
-    });
-    return dataFinal;
+    
+    const hoje = new Date();
+    const dataOntem = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate() - 1);
+    
+    const ano = dataOntem.getFullYear();
+    const mes = String(dataOntem.getMonth() + 1).padStart(2, '0');
+    const dia = String(dataOntem.getDate()).padStart(2, '0');
+    
+    return `${ano}-${mes}-${dia}`;
   }, [pedidos]);
 
   const anosDisponiveis = useMemo(() => {
@@ -346,21 +521,37 @@ function App() {
     let lista = [...pedidos];
     if (filtroAno !== 'TODOS') lista = lista.filter(item => extrairAno(item._source?.data_solicitacao) === filtroAno);
     if (filtroStatus !== 'TODOS') lista = lista.filter(item => traduzirStatus(item._source?.status_solicitacao) === filtroStatus);
-    if (filtroSituacao !== 'TODOS') lista = lista.filter(item => {
-        const traduzido = traduzirStatus(item._source?.status_solicitacao);
-        const info = getSituacaoInfo(traduzido);
-        return `${info.emoji} ${info.label}` === filtroSituacao;
-    });
+    if (filtroSituacao !== 'TODOS') {
+        lista = lista.filter(item => {
+            const source = item._source || {};
+            const traduzido = traduzirStatus(source.status_solicitacao);
+            const info = getSituacaoInfo(traduzido);
+            if (filtroSituacao === "🔵 AGENDAMENTO FUTURO") {
+                const dataDoAgendamento = source.data_marcacao || source.data_atualizacao_marcacao;
+                return info.classe === 'sucesso' && isDataFutura(dataDoAgendamento);
+            }
+            return `${info.emoji} ${info.label}` === filtroSituacao;
+        });
+    }
     
     lista.sort((a, b) => {
-      const sourceA = a._source || {}; const sourceB = b._source || {};
+      const sourceA = a._source || {}; 
+      const sourceB = b._source || {};
       
+      const getDataValida = (src) => {
+        const str = src.data_solicitacao || src.data_marcacao || src.data_atualizacao;
+        if (!str) return 0;
+        const tempo = new Date(str).getTime();
+        return isNaN(tempo) ? 0 : tempo;
+      };
+
       if (ordem === 'PROCEDIMENTO') {
           return String(getNomeProcedimento(sourceA)).localeCompare(String(getNomeProcedimento(sourceB)));
       }
 
-      if (ordem === 'DATA_DESC') return new Date(sourceB.data_solicitacao || 0) - new Date(sourceA.data_solicitacao || 0);
-      if (ordem === 'DATA_ASC') return new Date(sourceA.data_solicitacao || 0) - new Date(sourceB.data_solicitacao || 0);
+      if (ordem === 'DATA_DESC') return getDataValida(sourceB) - getDataValida(sourceA);
+      if (ordem === 'DATA_ASC') return getDataValida(sourceA) - getDataValida(sourceB);
+      
       if (ordem === 'UNIDADE') return String(sourceA.nome_unidade_solicitante || "").localeCompare(String(sourceB.nome_unidade_solicitante || ""));
       if (ordem === 'STATUS') return String(traduzirStatus(sourceA.status_solicitacao)).localeCompare(String(traduzirStatus(sourceB.status_solicitacao)));
       return 0;
@@ -374,12 +565,6 @@ function App() {
   const indexPrimeiroItem = indexUltimoItem - ITENS_POR_PAGINA;
   const itensAtuais = listaExibida.slice(indexPrimeiroItem, indexUltimoItem);
   const totalPaginas = Math.ceil(listaExibida.length / ITENS_POR_PAGINA);
-
-  const mudarPagina = (n) => {
-    setPaginaAtual(n);
-    const el = document.querySelector('.filters-container');
-    if(el) el.scrollIntoView({ behavior: 'smooth' });
-  };
 
   const primeiroPedido = pedidos.length > 0 ? pedidos[0]._source : null;
 
@@ -397,26 +582,31 @@ function App() {
             <form onSubmit={buscarDados} className="search-form">
             <div className="inputs-wrapper">
                 <input
-                type="text"
-                placeholder="Digite o CPF do paciente"
-                value={cpf}
-                onChange={(e) => {
-                    setCpf(e.target.value);
-                    setCaptchaDigitado('');
-                    if (pedidos.length > 0 || erro) {
-                        limparDadosAnteriores();
-                        gerarCaptcha();
-                    }
-                }}
-                className="search-input cpf-input"
+                  type="text"
+                  placeholder="Digite o CPF do paciente"
+                  value={cpf}
+                  disabled={loading}
+                  onChange={(e) => {
+                      setCpf(e.target.value);
+                      setCaptchaDigitado('');
+                      if (pedidos.length > 0 || erro) {
+                          limparDadosAnteriores();
+                          gerarCaptcha();
+                      }
+                  }}
+                  className="search-input cpf-input"
                 />
                 <div className="captcha-wrapper">
-                <div className="captcha-box" title="Código de verificação">{captchaGerado}</div>
-                <button type="button" className="captcha-refresh-btn" onClick={gerarCaptcha} title="Trocar código">↻</button>
-                <input type="text" placeholder="Digite aqui o código visualizado" value={captchaDigitado}
-                    onChange={(e) => setCaptchaDigitado(e.target.value)} className="search-input captcha-input"
+                  <div className="captcha-box" title="Código de verificação">{captchaGerado}</div>
+                  <button type="button" className="captcha-refresh-btn" onClick={gerarCaptcha} title="Trocar código">↻</button>
+                  <input 
+                    type="text" 
+                    placeholder="Digite aqui o código visualizado" 
+                    value={captchaDigitado}
+                    onChange={(e) => setCaptchaDigitado(e.target.value.replace(/\s/g, ''))} 
+                    className="search-input captcha-input"
                 />
-                </div>
+              </div>
             </div>
             <button type="submit" disabled={loading} className="search-button">
                 {loading ? '...' : 'CONSULTAR'}
@@ -425,6 +615,7 @@ function App() {
       </div>
 
       {!solicitandoValidacao && erro && <div className="error-message">{erro}</div>}
+      {loading && !solicitandoValidacao && renderSkeleton()}
 
       {solicitandoValidacao && (
         <div className="modal-overlay">
@@ -438,7 +629,7 @@ function App() {
               <input 
                 type="text" 
                 className="search-input input-mae-centralizado" 
-                placeholder="Ex: Maria"
+                placeholder="Exemplo: Maria"
                 value={nomeMae}
                 onChange={(e) => {
                     setNomeMae(e.target.value);
@@ -478,7 +669,7 @@ function App() {
                   </div>
                   <div className="info-item">
                       <strong>CPF:</strong>
-                      <span>{formatarCPF(cpf)}</span>
+                      <span>{mascararCPF(cpf)}</span>
                   </div>
                   <div className="info-item">
                       <strong>ENDEREÇO:</strong>
@@ -486,7 +677,7 @@ function App() {
                   </div>
                   <div className="info-item">
                       <strong>TELEFONE:</strong>
-                      <span>{primeiroPedido.telefone_unificado}</span>
+                      <span>{formatarTelefone(primeiroPedido.telefone_unificado)}</span>
                   </div>
               </div>
 
@@ -555,11 +746,12 @@ function App() {
               <div className="legend-section">
                 <span className="legend-title">Legenda de Situação</span>
                 <div className="legend-grid">
-                  <div className="legend-item"><div className="legend-header"><span className="legend-dot ind-alerta"></span>🟡 PENDENTE</div></div>
-                  <div className="legend-item"><div className="legend-header"><span className="legend-dot ind-sucesso"></span>🟢 CONFIRMADO / AUTORIZADO</div></div>
-                  <div className="legend-item"><div className="legend-header"><span className="legend-dot ind-perigo"></span>🔴 NEGADO / CANCELADO</div></div>
-                  <div className="legend-item"><div className="legend-header"><span className="legend-dot ind-laranja"></span>🔁 DEVOLVIDO / REENVIADO</div></div>
-                  <div className="legend-item"><div className="legend-header"><span className="legend-dot ind-rosa"></span>⚠️ FALTA / AUSÊNCIA</div></div>
+                  <div className="legend-item"><div className="legend-header"><span className="emoji-fix">🟡</span> PENDENTE</div></div>
+                  <div className="legend-item"><div className="legend-header"><span className="emoji-fix">🟢</span> CONFIRMADO / AUTORIZADO</div></div>
+                  <div className="legend-item"><div className="legend-header"><span className="emoji-fix">🔴</span> NEGADO / CANCELADO</div></div>
+                  <div className="legend-item"><div className="legend-header"><span className="emoji-fix">🔁</span> DEVOLVIDO / REENVIADO</div></div>
+                  <div className="legend-item"><div className="legend-header"><span className="emoji-fix">⚠️</span> FALTA / AUSÊNCIA</div></div>
+                  <div className="legend-item"><div className="legend-header"><span className="emoji-fix">🔵</span> AGENDAMENTO FUTURO</div></div>
                 </div>
               </div>
             </div>
@@ -570,13 +762,27 @@ function App() {
               const source = item._source || {};
               
               const nomeProcedimento = getNomeProcedimento(source);
-              
               const solicitante = source.nome_unidade_solicitante || 'Não informado';
               const statusTraduzido = traduzirStatus(source.status_solicitacao);
               const situacaoInfo = getSituacaoInfo(statusTraduzido);
+              
+              const textoBruto = extrairTextoLaudo(source.laudo) || source.justificativa_impedimento || "";
+              const motivoCancelamento = sanitizarMotivo(textoBruto);
+
+              const dataDoAgendamento = source.data_marcacao || source.data_atualizacao_marcacao;
+              const ehAgendamentoFuturo = situacaoInfo.classe === 'sucesso' && isDataFutura(dataDoAgendamento);
+
+              const classeCard = ehAgendamentoFuturo ? 'futuro' : situacaoInfo.classe;
+              const emojiCard = ehAgendamentoFuturo ? '🔵' : situacaoInfo.emoji;
+              const textoStatusCard = ehAgendamentoFuturo ? 'AGENDAMENTO FUTURO' : statusTraduzido;
+
+              const corTema = ehAgendamentoFuturo ? '#3498db' : '#2ecc71';
+              const bgTema = ehAgendamentoFuturo ? '#f4f9fd' : '#f0fdf4';
+              const bordaTema = ehAgendamentoFuturo ? '#b6d4fe' : '#bcf0da';
+              const corTextoDetalhes = ehAgendamentoFuturo ? corTema : '#666666';
 
               return (
-                <div key={index} className={`result-card tipo-${situacaoInfo.classe}`}>
+                <div key={index} className={`result-card tipo-${classeCard}`}>
                   <h3 className="card-title">{nomeProcedimento}</h3>
                   <div className="card-details">
                     <div className="info-row">
@@ -588,29 +794,59 @@ function App() {
                     </div>
                     
                     <div className="status-full">
-                      <span className="emoji-grande">{situacaoInfo.emoji}</span>
-                      <span className="status-texto">{statusTraduzido}</span>
+                      <span className="emoji-grande emoji-fix">{emojiCard}</span>
+                      <span className="status-texto" style={ehAgendamentoFuturo ? { color: '#3498db', fontWeight: 'bold' } : {}}>
+                        {textoStatusCard}
+                      </span>
                     </div>
 
-                    {situacaoInfo.classe === 'sucesso' && (
-                       <div className="destaque-contato">
-                          <strong>AGENDAMENTO CONFIRMADO:</strong>
-                          <span className="texto-contato" style={{marginBottom: '10px', display: 'block'}}>
-                            Entre em contato com a Unidade Executante ou com a Central de Regulação para confirmar a data e o horário do seu agendamento.
-                            Caso esteja tudo corretamente encaminhado, compareça com antecedência e leve seus documentos pessoais.
-                          </span>
+                    {(situacaoInfo.classe === 'sucesso' || classeCard === 'futuro') && (
+                       <div className="destaque-contato" style={{ backgroundColor: bgTema, border: `1px solid ${bordaTema}`, borderRadius: '6px', padding: '12px', marginTop: '12px' }}>
                           
-                          <hr style={{border: '0', borderTop: '1px dashed #2ecc71', opacity: 0.6, margin: '10px 0'}}/>
+                          <strong style={{ color: ehAgendamentoFuturo ? corTema : '#666666', display: 'block', marginBottom: '4px' }}>
+                            {ehAgendamentoFuturo ? 'INSTRUÇÕES PARA O ATENDIMENTO' : 'DETALHES DO ANTIGO AGENDAMENTO'}
+                          </strong>
+
+                          {ehAgendamentoFuturo && (
+                            <span className="texto-contato" style={{marginBottom: '10px', display: 'block', color: '#333'}}>
+                              Entre em contato com a Unidade Executante para confirmar a data e o horário do seu agendamento.
+                              Caso esteja tudo corretamente encaminhado, compareça com antecedência e leve seus documentos pessoais.
+                            </span>
+                          )}
                           
-                          <div className="info-row" style={{marginBottom: '5px'}}>
-                            <strong>DATA DO AGENDAMENTO:</strong> {formatarDataHora(source.data_marcacao || source.data_atualizacao_marcacao)}
+                          <hr style={{border: '0', borderTop: `1px dashed ${corTema}`, opacity: 0.6, margin: '10px 0'}}/>
+                          
+                          <div className="info-row" style={{marginBottom: '5px', color: ehAgendamentoFuturo ? 'inherit' : '#666666'}}>
+                            <strong style={{ color: corTextoDetalhes }}>DATA E HORÁRIO:</strong> {formatarDataHora(dataDoAgendamento)}
                           </div>
                           
-                          <div className="info-row">
-                            <strong>UNIDADE EXECUTANTE:</strong> {source.nome_unidade_executante || source.no_unidade_executante || 'Consulte a unidade solicitante'}
+                          <div className="info-row" style={{color: ehAgendamentoFuturo ? 'inherit' : '#666666'}}>
+                            <strong style={{ color: corTextoDetalhes }}>UNIDADE EXECUTANTE:</strong> {source.nome_unidade_executante || 'Consulte a unidade solicitante'}
                           </div>
+
+                          {source.telefone_unidade_executante && (
+                            <div className="info-row" style={{marginTop: '5px', color: ehAgendamentoFuturo ? 'inherit' : '#666666'}}>
+                              <strong style={{ color: corTextoDetalhes }}>TELEFONE:</strong>{' '}
+                              <a 
+                                href={`tel:${obterNumeroLink(source.telefone_unidade_executante)}`} 
+                                className="link-telefone"
+                                style={{ color: corTextoDetalhes, textDecoration: 'underline', fontWeight: 'bold', marginLeft: '5px' }}
+                                title="Clique para ligar"
+                              >
+                                📞 {formatarTelefone(source.telefone_unidade_executante)}
+                              </a>
+                            </div>
+                          )}
                        </div>
                     )}
+
+                    {situacaoInfo.classe === 'perigo' && motivoCancelamento && (
+                      <div className="destaque-motivo" style={{ backgroundColor: '#fdf0f0', border: '1px solid #fababa', borderRadius: '6px', padding: '12px', marginTop: '12px' }}>
+                        <strong style={{ color: '#e74c3c', display: 'block', marginBottom: '4px' }}>MOTIVO DO CANCELAMENTO OU NEGATIVA:</strong>
+                        <span style={{ fontSize: '0.95rem', color: '#333', lineHeight: '1.4' }}>{motivoCancelamento}</span>
+                     </div>
+                    )}
+                    
                   </div>
                 </div>
               );
