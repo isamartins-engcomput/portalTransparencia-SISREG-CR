@@ -268,12 +268,14 @@ const traduzirStatus = (statusRaw) => {
 const getSituacaoInfo = (statusTraduzido) => {
   const st = String(statusTraduzido).toUpperCase();
 
-  if (st.includes("PENDENTE") || st.includes("AGUARDANDO")) {
-    return { label: "PENDENTE", emoji: "🟡", classe: "alerta" };
-  }
   if (st.includes("AGENDADA") || st.includes("CONFIRMADA")) {
     return { label: "CONFIRMADO / AUTORIZADO", emoji: "🟢", classe: "sucesso" };
   }
+  
+  if (st.includes("PENDENTE") || st.includes("AGUARDANDO")) {
+    return { label: "PENDENTE", emoji: "🟡", classe: "alerta" };
+  }
+  
   if (st.includes("NEGADA") || st.includes("CANCELADA") || st.includes("CANCELADO") || st.includes("NÃO ENCONTRADA")) {
     return { label: "NEGADO / CANCELADO", emoji: "🔴", classe: "perigo" };
   }
