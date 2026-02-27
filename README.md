@@ -18,14 +18,15 @@ https://github.com/user-attachments/assets/b55e80fa-acc2-4a23-8654-7860c7a4954c
 
 Atuando como um *proxy* otimizado sobre o sistema SISREG, o portal oferece uma experiência de usuário (UX) superior, com foco em **rapidez, clareza e acessibilidade**.
 
-![Interface do Portal](./screenshots/interface-web.png)*(Interface para consulta do cidadão)*
+![Interface do Portal](./screenshots/interface-web.jpeg)*(Interface para consulta do cidadão)*
 
 ### ✨ Principais Funcionalidades
 
-* 🔍 **Consulta Atualizada:** Conexão direta com a API do SISREG via Backend Proxy.
-* 📄 **Paginação & Histórico Completo:** Capacidade de carregar históricos extensos (até 10.000 registros) com navegação fluida.
-* 🛡️ **Segurança Anti-Bot:** Implementação de Captcha Inteligente para proteger a API contra requisições maliciosas.
-* 🧹 **UX Aprimorada:** Limpeza automática de dados sensíveis ao alternar entre CPF's.
+* 🔍 **Consulta Assíncrona Dupla:** Busca simultânea e otimizada nas bases de Solicitações e Marcações do SISREG.
+* 🛡️ **Segurança em Duas Etapas:** Implementação de Captcha visual anti-bot e validação cruzada do nome da mãe direto no banco do SISREG.
+* 📄 **Filtro Inteligente de Histórico:** Exibição focada nas demandas ativas do paciente e no histórico consolidado dos últimos 5 anos.
+* 🧩 **Tratamento Avançado de Dados:** Unificação automática de contatos, formatação de laudos e agrupamento inteligente de múltiplos procedimentos no mesmo pedido.
+* 🧹 **UX Aprimorada:** Separação visual clara de "Agendamentos Futuros" e limpeza automática de dados sensíveis ao alternar CPFs.
 * 🎨 **Identidade Visual Oficial:** Design alinhado à Prefeitura de Três Lagoas.
 
 ---
@@ -42,18 +43,18 @@ O projeto foi construído utilizando uma arquitetura moderna separada em **Front
 * **Axios:** Para requisições HTTP assíncronas.
 * **CSS Modules (Custom Properties):** Variáveis globais (`:root`) para manutenção centralizada de cores e fontes.
 
-![Frontend](./screenshots/frontend.png)*(Terminal do frontend)*
+![Frontend](./screenshots/frontend.jpeg)*(Terminal do frontend)*
 
 ### Backend (Servidor)
 
 ![Python](https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white) ![FastAPI](https://img.shields.io/badge/FastAPI-005571?style=for-the-badge&logo=fastapi)
 
 * **FastAPI:** Framework Python de alta performance para APIs.
-* **Python Requests:** Para comunicação com o servidor do governo.
+* **HTTPX & Asyncio:** Para comunicação assíncrona, paralela e não-bloqueante com o servidor do governo.
 * **Dotenv:** Gerenciamento seguro de variáveis de ambiente.
 * **Uvicorn:** Servidor ASGI para produção.
 
-![Backend](./screenshots/backend.png)*(Terminal do backend)*
+![Backend](./screenshots/backend.jpeg)*(Terminal do backend)*
 
 ---
 
@@ -75,6 +76,7 @@ PortalTransparencia/
 │   │   ├── assets/         # Fontes (Aktiv Grotesk) e Logo
 │   │   ├── App.jsx         # Lógica da Aplicação
 │   │   └── App.css         # Design System e Variáveis CSS
+│   ├── .env                # Variáveis de ambiente do Front (API URL)
 │   └── package.json        # Dependências do Node
 │
 └── README.md               # Documentação
@@ -100,16 +102,16 @@ Acesse a pasta do backend e prepare o ambiente Python:
 # Entre na pasta
 cd backend
 
-# Crie um ambiente virtual (Opcional, mas recomendado)
-python -m venv venv
+# Crie um ambiente virtual
+python3 -m venv .venv
 
-# Ative o venv (Windows)
-venv\Scripts\activate
-# Ou (Linux/Mac)
-source venv/bin/activate
+# Ative o ambiente virtual (Linux/Mac)
+source .venv/bin/activate
+# Ou (Windows)
+.venv\Scripts\activate
 
-# Instale as dependências
-pip install fastapi uvicorn requests python-dotenv
+# Instale as dependências contornando bloqueios de ambiente do SO
+python3 -m pip install -r requirements.txt
 ```
 
 #### 🔐 **Variáveis de Ambiente (.env)**
@@ -124,7 +126,7 @@ SISREG_SENHA=sua_senha_sisreg
 **Rodando o Servidor:**
 
 ```
-uvicorn main:app --reload --host 0.0.0.0 --port 8000
+python3 -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
 ### 2️⃣ Configuração do Frontend (Interface)
@@ -137,23 +139,52 @@ cd frontend
 
 # Instale as dependências do projeto
 npm install
+```
 
+#### 🔗 **Conexão com a API (.env)**
+
+Crie um arquivo `.env` na raiz da pasta `frontend` para apontar para o seu backend local:
+
+`VITE_API_BASE_URL=http://localhost:8000/api`
+
+**Iniciando a Aplicação:**
+
+```
 # Inicie o servidor de desenvolvimento
 npm run dev
 ```
 
 ✅ *O Frontend estará rodando em: `http://localhost:5173`*
 
+### 3️⃣ Como testar no Celular (Rede Local)
+
+Como o sistema é totalmente responsivo, você pode testá-lo no navegador do seu smartphone. Ambos os dispositivos **(computador e celular)** **precisam estar conectados à mesma rede Wi-Fi**.
+
+1. Descubra o endereço de IP local do seu computador (Ex: `192.168.1.1`).
+
+* No Windows: abra o terminal e digite `ipconfig`.
+* No Linux/Mac: abra o terminal e digite `hostname -I` ou `ifconfig`.
+
+2. No arquivo `.env` do Frontend, troque a palavra `localhost` pelo seu IP:
+
+`VITE_API_BASE_URL=http://192.168.1.1:8000/api`
+
+3. Inicie o Frontend liberando o acesso para a rede, adicionando `--host`:
+
+`npm run dev -- --host`
+
+4. Pegue o seu celular, abra o navegador e digite o endereço que aparecerá no terminal do Vite (Ex: `http://192.168.1.1:5173`).
+
 ---
 
 ## 🧪 Como Utilizar o Portal
 
-1. **Acesse:** Abra o navegador em `http://localhost:5173`.
-2. **Identifique-se:** Digite o CPF do paciente.
-3. **Segurança:** Digite o código de verificação (Captcha) exibido.
-4. **Consulta:** Clique em "CONSULTAR".
-5. **Confirmação:** Valide as iniciais e data de nascimento no Modal de Segurança.
-6. **Resultado:** Visualize a lista completa de procedimentos, filtre por ano ou status e navegue pela paginação.
+1. **Acesso:** Abra o navegador em `http://localhost:5173`.
+2. **Identificação:** Digite o CPF do paciente e o código de verificação (Captcha) exibido na tela.
+3. **Consulta:** Clique em "CONSULTAR".
+4. **Segurança Adicional:** Confirme o primeiro nome da mãe do paciente para validar a identidade junto ao SISREG.
+5. **Termo de Consentimento:** Verifique os dados parcialmente ofuscados no Modal de Segurança e declare ser o titular.
+6. **Resultados:** Visualize a lista completa e formatada de procedimentos, utilize os filtros de situação/ano e navegue pela paginação.
 
 ---
 
@@ -165,7 +196,6 @@ npm run dev
 
 * GitHub: [isamartins-engcomput](https://github.com/isamartins-engcomput)
 * LinkedIn: [Isadora Martins](https://www.linkedin.com/in/isadora-martins-611478332)
-
 * E-mail pessoal: [isadoramartins1906@gmail.com](mailto:isadoramartins1906@gmail.com)
 * E-mail institucional: [isadora.martins2@estudante.ifms.edu.br](mailto:isadora.martins2@estudante.ifms.edu.br)
 
@@ -188,8 +218,6 @@ O projeto visa fortalecer a integração ensino-serviço-comunidade, aplicando c
 > Acredito que o conhecimento cresce quando compartilhado, portanto, se você tem ideias para torná-lo mais acessível, rápido ou seguro, sua ajuda é fundamental.
 >
 > Sinta-se à vontade para contribuir! :)
-
-
 
 <p align="center">
   <em> ✨ Tecnologia é a ferramenta, cuidar de pessoas é a missão! ✨</em><br>
