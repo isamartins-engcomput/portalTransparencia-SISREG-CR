@@ -271,18 +271,16 @@ const getSituacaoInfo = (statusTraduzido) => {
   if (st.includes("AGENDADA") || st.includes("CONFIRMADA")) {
     return { label: "CONFIRMADO / AUTORIZADO", emoji: "🟢", classe: "sucesso" };
   }
-  
-  if (st.includes("PENDENTE") || st.includes("AGUARDANDO")) {
+  else if (st.includes("PENDENTE") || st.includes("AGUARDANDO")) {
     return { label: "PENDENTE", emoji: "🟡", classe: "alerta" };
   }
-  
-  if (st.includes("NEGADA") || st.includes("CANCELADA") || st.includes("CANCELADO") || st.includes("NÃO ENCONTRADA")) {
+  else if (st.includes("NEGADA") || st.includes("CANCELADA") || st.includes("CANCELADO") || st.includes("NÃO ENCONTRADA")) {
     return { label: "NEGADO / CANCELADO", emoji: "🔴", classe: "perigo" };
   }
-  if (st.includes("DEVOLVIDA") || st.includes("REENVIADA")) {
+  else if (st.includes("DEVOLVIDA") || st.includes("REENVIADA")) {
     return { label: "DEVOLVIDO / REENVIADO", emoji: "🔁", classe: "laranja" };
   }
-  if (st.includes("FALTA") || st.includes("COMPARECEU")) {
+  else if (st.includes("FALTA") || st.includes("COMPARECEU")) {
     return { label: "FALTA / AUSÊNCIA", emoji: "⚠️", classe: "rosa" };
   }
 
@@ -315,30 +313,61 @@ const getNomeProcedimento = (src) => {
       /ATEN[CÇ][ÃA]O\s*PRIM[ÁA]RIA/i
   ];
 
+  const formatarRetorno = (texto) => {
+      const limpo = String(texto).replace(/\s+/g, ' ').trim();
+      if (/^CONSULTA M[ÉE]DICA EM ATEN[CÇ][ÃA]O ESPECIALIZADA$/i.test(limpo)) {
+          return "Consulta Especializada (Especialidade não detalhada)";
+      }
+      return limpo;
+  };
+
   const ehGenerico = padroesGenericos.some(regex => regex.test(String(raw)));
 
   if (ehGenerico) {
       
       if (src.descricao_interna_procedimento) {
-          return src.descricao_interna_procedimento.trim();
+          return formatarRetorno(src.descricao_interna_procedimento);
       }
 
       if (src.procedimentos && Array.isArray(src.procedimentos)) {
+          let procedimentosAgrupados = [];
+          
           for (const item of src.procedimentos) {
               const nomeItem = item.descricao_sigtap || item.nome_procedimento;
               
               if (nomeItem && !padroesGenericos.some(r => r.test(String(nomeItem)))) {
-                  return nomeItem.trim();
+                  procedimentosAgrupados.push(nomeItem.trim());
               }
+          }
+          
+          if (procedimentosAgrupados.length > 0) {
+              return [...new Set(procedimentosAgrupados)].join(' + ');
           }
       }
 
       if (src.nome_grupo_procedimento) {
-          return src.nome_grupo_procedimento.trim();
+          return formatarRetorno(src.nome_grupo_procedimento);
       }
   }
   
-  return String(raw).replace(/\s+/g, ' ').trim();
+  if (src.procedimentos && Array.isArray(src.procedimentos) && src.procedimentos.length > 1) {
+      let procedimentosAgrupados = [];
+      
+      for (const item of src.procedimentos) {
+          const nomeItem = item.descricao_sigtap || item.nome_procedimento;
+          
+          if (nomeItem && !padroesGenericos.some(r => r.test(String(nomeItem)))) {
+              procedimentosAgrupados.push(nomeItem.trim());
+          }
+      }
+      
+      let unicos = [...new Set(procedimentosAgrupados)];
+      if (unicos.length > 1) {
+          return unicos.join(' + ');
+      }
+  }
+
+  return formatarRetorno(raw);
 };
 
 function App() {
@@ -523,15 +552,24 @@ function App() {
     let lista = [...pedidos];
     if (filtroAno !== 'TODOS') lista = lista.filter(item => extrairAno(item._source?.data_solicitacao) === filtroAno);
     if (filtroStatus !== 'TODOS') lista = lista.filter(item => traduzirStatus(item._source?.status_solicitacao) === filtroStatus);
+    
     if (filtroSituacao !== 'TODOS') {
         lista = lista.filter(item => {
             const source = item._source || {};
             const traduzido = traduzirStatus(source.status_solicitacao);
             const info = getSituacaoInfo(traduzido);
+            
+            const dataDoAgendamento = source.data_marcacao || source.data_atualizacao_marcacao;
+            const ehFuturo = info.classe === 'sucesso' && isDataFutura(dataDoAgendamento);
+
             if (filtroSituacao === "🔵 AGENDAMENTO FUTURO") {
-                const dataDoAgendamento = source.data_marcacao || source.data_atualizacao_marcacao;
-                return info.classe === 'sucesso' && isDataFutura(dataDoAgendamento);
+                return ehFuturo;
             }
+            
+            if (filtroSituacao === "🟢 CONFIRMADO / AUTORIZADO") {
+                return `${info.emoji} ${info.label}` === filtroSituacao && !ehFuturo;
+            }
+            
             return `${info.emoji} ${info.label}` === filtroSituacao;
         });
     }

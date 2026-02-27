@@ -85,7 +85,7 @@ async def consultar_cpf(cpf_usuario: str, nome_mae: str = Query(None)):
             print("[API] Iniciando consulta assíncrona dupla ao Governo...", flush=True)
 
         async def fazer_requisicao(url, nome_busca):
-            async with httpx.AsyncClient(timeout=30.0) as client:
+            async with httpx.AsyncClient(timeout=30.0, verify=False) as client:
                 try:
                     resp = await client.post(url + "/_search", json=payload, headers=headers, auth=auth)
                     if resp.status_code == 200:
