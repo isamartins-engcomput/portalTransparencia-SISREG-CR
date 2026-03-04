@@ -115,16 +115,23 @@ async def consultar_cpf(cpf_usuario: str, nome_mae: str = Query(None)):
         for item in lista_marcacoes:
             m_source = item.get("_source", {})
             dt_m = m_source.get("data_solicitacao")
+            
             if dt_m:
                 chave = dt_m[:10]
-                mapa_marcacoes[chave] = m_source
+                if chave not in mapa_marcacoes:
+                    mapa_marcacoes[chave] = []
+                mapa_marcacoes[chave].append(m_source)
 
         if lista_solicitacoes:
             for item in lista_solicitacoes:
                 source = item.get("_source", {})
                 dt_s = source.get("data_solicitacao")
+                
                 chave = dt_s[:10] if dt_s else None
-                m_dados = mapa_marcacoes.get(chave, {}) if chave else {}
+                m_dados = {}
+                
+                if chave and mapa_marcacoes.get(chave):
+                    m_dados = mapa_marcacoes[chave].pop(0)
                 
                 chaves_tels = ["telefone_paciente","telefone"]
                 tels_encontrados = []
