@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api';
@@ -19,6 +19,18 @@ const renderSkeleton = () => (
 );
 
 export default function FilaPublica() {
+
+  const dataAtualizacao = useMemo(() => {
+    const hoje = new Date();
+    const ontem = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate() - 1);
+    
+    return ontem.toLocaleDateString('pt-BR', { 
+      day: '2-digit', 
+      month: '2-digit', 
+      year: 'numeric' 
+    });
+  }, []);
+
   const [filas, setFilas] = useState([]);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState(null);
@@ -78,6 +90,13 @@ export default function FilaPublica() {
           ))}
         </div>
       )}
+
+      {!carregando && !erro && (
+        <div className="data-atualizacao">
+          Sistema atualizado no dia {dataAtualizacao}
+        </div>
+      )}
+
     </div>
   );
 }

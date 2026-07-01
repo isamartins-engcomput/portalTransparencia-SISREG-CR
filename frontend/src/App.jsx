@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import axios from 'axios'
 import './App.css'
 import logoPrefeitura from './assets/logo-prefeitura.png'
@@ -200,6 +200,101 @@ const sanitizarMotivo = (textoRaw) => {
   return textoFinal;
 };
 
+const PainelPosicaoFila = ({ procedimento, status, dataSolicitacao }) => {
+  const [posicao, setPosicao] = useState(null);
+  const [buscando, setBuscando] = useState(true);
+  const [sincronizando, setSincronizando] = useState(false);
+
+  useEffect(() => {
+    let isMounted = true;
+    let timerId = null;
+
+    const buscarPosicao = async () => {
+      if (!isMounted) return;
+
+      try {
+        const res = await axios.get(`${API_BASE_URL}/posicao-fila`, {
+          params: { procedimento, status, data_solic: dataSolicitacao }
+        });
+        
+        if (isMounted) {
+          setPosicao(res.data.posicao_fila);
+          setBuscando(false);
+          setSincronizando(false);
+        }
+      } catch (e) {
+        if (isMounted) {
+          if (e.response?.status === 503) {
+            setBuscando(false);
+            setSincronizando(true);
+            if (timerId) clearTimeout(timerId);
+            timerId = setTimeout(buscarPosicao, 5000);
+          } else {
+            setBuscando(false);
+            setSincronizando(true);
+          }
+        }
+      }
+    };
+
+    const tempoDeCarregamento = Math.floor(Math.random() * 1000) + 500;
+    const initialTimer = setTimeout(() => {
+      buscarPosicao();
+    }, tempoDeCarregamento);
+
+    return () => {
+      isMounted = false;
+      clearTimeout(initialTimer);
+      if (timerId) clearTimeout(timerId);
+    };
+  }, [procedimento, status, dataSolicitacao]);
+
+  if (buscando) {
+    return (
+      <div className="posicao-fila-container" style={{ padding: '20px' }}>
+         <div className="box-carregando-fila">
+           <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="icone-giratorio">
+             <path d="M12 2v4"></path><path d="M12 18v4"></path><path d="M4.93 4.93l2.83 2.83"></path><path d="M16.24 16.24l2.83 2.83"></path><path d="M2 12h4"></path><path d="M18 12h4"></path><path d="M4.93 19.07l2.83-2.83"></path><path d="M16.24 7.76l2.83-2.83"></path>
+           </svg>
+           <span>Calculando posição exata na fila...</span>
+         </div>
+      </div>
+    );
+  }
+
+  if (sincronizando || !posicao) {
+    return (
+      <div className="posicao-fila-container">
+         <div className="aviso-fila-viva">
+           <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="icone-aviso-fila">
+             <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"></path>
+             <path d="M12 9v4"></path>
+             <path d="M12 17h.01"></path>
+           </svg>
+           <span>Não foi possível calcular a posição exata neste momento, mas fique tranquilo(a): sua solicitação segue ativa e em análise. O servidor está sincronizando as filas neste exato momento. Permaneça nesta tela e sua posição aparecerá automaticamente em instantes.</span>
+         </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="posicao-fila-container">
+      <div className="posicao-destaque">
+        <span className="posicao-numero">{posicao}º</span>
+        <span className="posicao-texto">na fila de espera</span>
+      </div>
+      <div className="aviso-fila-viva">
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="icone-aviso-fila" style={{ marginRight: '8px' }}>
+           <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"></path>
+           <path d="M12 9v4"></path>
+           <path d="M12 17h.01"></path>
+        </svg>
+        <span>Esta fila é dinâmica e viva! Sua posição pode sofrer alterações devido à entrada de pacientes com classificações de risco diferentes.</span>
+      </div>
+    </div>
+  );
+};
+
 const filtrarUltimos5Anos = (listaPedidos) => {
   const anoAtual = new Date().getFullYear();
   const anoLimite = anoAtual - 5; 
@@ -257,51 +352,50 @@ const traduzirStatus = (statusRaw, tipoRegistro = "AMBULATORIAL") => {
   if (PLANILHA_STATUS[st]) return PLANILHA_STATUS[st];
 
   if (tipoRegistro === "HOSPITALAR") {
-    switch (st) {
-      case 'PENDENTE':  return "Pendente de análise hospitalar";
-      case 'APROVADA':  return "Cirurgia Aprovada / Agendada";
-      case 'NEGADA':    return "Solicitação de cirurgia negada";
-      case 'CANCELADA': return "Cirurgia Cancelada";
-      case 'DEVOLVIDA': return "Devolvida para ajustes médicos";
-      case 'REENVIADA': return "Reenviada para análise hospitalar";
-      case 'TROCA':     return "Troca de procedimento solicitada";
-      default:          return statusRaw; 
-    }
+    if (st.includes("APROVADA")) return "Cirurgia Aprovada / Agendada";
+    if (st.includes("NEGADA")) return "Solicitação de cirurgia negada";
+    if (st.includes("CANCELADA")) return "Cirurgia Cancelada";
+    if (st.includes("DEVOLVIDA")) return "Devolvida para ajustes médicos";
+    if (st.includes("REENVIADA")) return "Reenviada para análise hospitalar";
+    if (st.includes("TROCA")) return "Troca de procedimento solicitada";
+    if (st.includes("PENDENTE")) return "Pendente de análise hospitalar";
   }
 
-  if (st.includes("FALTA")) return PLANILHA_STATUS["FALTA"];
-  if (st.includes("AGENDAMENTO") && st.includes("CANCELADO")) return "Agendamento cancelado";
-  if (st.includes("CONFIRMADO")) return "Agendada e Confirmada";
-  if (st.includes("PENDENTE CONFIRMAÇÃO")) return "Agendada pendente de confirmação";
-  if (st.includes("AGENDADA")) return "Agendada";
-  if (st.includes("AUTORIZADA")) return "Agendada";
-  if (st.includes("PENDENTE") && st.includes("FILA DE ESPERA")) return "Pendente de agendamento (Fila)";
-  if (st.includes("PENDENTE") && st.includes("REGULADOR")) return "Pendente de análise da regulação";
-  if (st.includes("DEVOLVIDA")) return "Devolvida pela regulação para correção";
-  if (st.includes("NEGADA")) return "Solicitação negada pela regulação";
-  if (st.includes("REENVIADA")) return "Reenviada para análise da regulação";
-  if (st.includes("CANCELADA")) return "Solicitação Cancelada";
-  
+  if (st.includes("FALTA") || st.includes("COMPARECEU")) return "Paciente não compareceu";
+  if (st.includes("CANCELAD") || st.includes("NEGAD")) return "Solicitação Cancelada";
+  if (st.includes("DEVOLVID")) return "Devolvida pela regulação para correção";
+  if (st.includes("REENVIAD") || st.includes("TROCA")) return "Reenviada para análise da regulação";
+
+  if (st.includes("AGENDAMENT") || st.includes("AGENDAD") || st.includes("CONFIRMAD") || st.includes("AUTORIZAD") || st.includes("FINALIZAD")) {
+     if (st.includes("PENDENTE")) return "Agendada pendente de confirmação";
+     return "Agendada e Confirmada";
+  }
+
+  if (st.includes("PENDENTE") || st.includes("AGUARDANDO") || st.includes("ESPERA")) {
+     if (st.includes("FILA")) return "Pendente de agendamento (Fila)";
+     return "Pendente de análise da regulação";
+  }
+
   return statusRaw; 
 };
 
 const getSituacaoInfo = (statusTraduzido) => {
   const st = String(statusTraduzido).toUpperCase();
 
-  if (st.includes("AGENDADA") || st.includes("CONFIRMADA")) {
+  if (st.includes("AGENDADA") || st.includes("CONFIRMADA") || st.includes("AUTORIZADA") || st.includes("APROVADA")) {
     return { label: "CONFIRMADO / AUTORIZADO", emoji: "🟢", classe: "sucesso" };
   }
-  else if (st.includes("PENDENTE") || st.includes("AGUARDANDO")) {
+  if (st.includes("PENDENTE") || st.includes("AGUARDANDO") || st.includes("ESPERA")) {
     return { label: "PENDENTE", emoji: "🟡", classe: "alerta" };
   }
-  else if (st.includes("NEGADA") || st.includes("CANCELADA") || st.includes("CANCELADO") || st.includes("NÃO ENCONTRADA")) {
+  if (st.includes("NEGADA") || st.includes("CANCELADA") || st.includes("CANCELADO") || st.includes("NÃO ENCONTRADA")) {
     return { label: "NEGADO / CANCELADO", emoji: "🔴", classe: "perigo" };
   }
-  else if (st.includes("DEVOLVIDA") || st.includes("REENVIADA")) {
-    return { label: "DEVOLVIDO / REENVIADO", emoji: "🔁", classe: "laranja" };
+  if (st.includes("DEVOLVIDA") || st.includes("REENVIADA") || st.includes("CORREÇÃO") || st.includes("TROCA")) {
+    return { label: "DEVOLVIDO / REENVIADO", emoji: "🟠", classe: "laranja" };
   }
-  else if (st.includes("FALTA") || st.includes("COMPARECEU")) {
-    return { label: "FALTA / AUSÊNCIA", emoji: "⚠️", classe: "rosa" };
+  if (st.includes("FALTA") || st.includes("COMPARECEU")) {
+    return { label: "FALTA / AUSÊNCIA", emoji: "🟣", classe: "rosa" };
   }
 
   return { label: "NÃO DEFINIDO", emoji: "⚪", classe: "neutro" };
@@ -311,10 +405,61 @@ const LISTA_SITUACOES = [
   "🟡 PENDENTE",
   "🟢 CONFIRMADO / AUTORIZADO",
   "🔴 NEGADO / CANCELADO",
-  "🔁 DEVOLVIDO / REENVIADO",
-  "⚠️ FALTA / AUSÊNCIA",
-  "🔵 AGENDAMENTO FUTURO"
+  "🟠 DEVOLVIDO / REENVIADO",
+  "🟣 FALTA / AUSÊNCIA",
+  "🔵 AGENDAMENTO FUTURO",
 ];
+
+const IconeStatus = ({ tipo, className = "" }) => {
+  const getCor = (t) => {
+    switch (t) {
+      case 'sucesso': return 'var(--cor-sucesso)';
+      case 'alerta':  return 'var(--cor-alerta)';
+      case 'perigo':  return 'var(--gov-red)';
+      case 'laranja': return 'var(--cor-laranja)';
+      case 'rosa':    return 'var(--cor-rosa)';
+      case 'futuro':  return 'var(--cor-info)';
+      case 'telefone':return 'currentColor';
+      default:        return 'var(--text-main)';
+    }
+  };
+
+  const props = {
+    xmlns: "http://www.w3.org/2000/svg",
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: getCor(tipo),
+    strokeWidth: "2",
+    strokeLinecap: "round",
+    strokeLinejoin: "round",
+    className: className
+  };
+
+  switch (tipo) {
+    case 'sucesso': 
+      return <svg {...props}><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>;
+    case 'alerta': 
+      return <svg {...props}><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>;
+    case 'perigo': 
+      return <svg {...props}><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>;
+    case 'laranja': 
+      return <svg {...props}><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path></svg>;
+    case 'rosa':
+      return (
+        <svg {...props}>
+          <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"></path>
+          <path d="M12 9v4"></path>
+          <path d="M12 17h.01"></path>
+        </svg>
+      );
+    case 'futuro': 
+      return <svg {...props}><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>;
+    case 'telefone': 
+      return <svg {...props}><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path></svg>;
+    default:
+      return <svg {...props}><circle cx="12" cy="12" r="10"></circle></svg>;
+  }
+};
 
 const getCoresEtiqueta = (classe) => {
     switch(classe) {
@@ -329,93 +474,79 @@ const getCoresEtiqueta = (classe) => {
   };
 
 const getNomeProcedimento = (src) => {
-  if (!src) return "Procedimento não informado";
+  if (!src) return "PROCEDIMENTO NÃO INFORMADO";
 
   if (src.tipo_registro === "HOSPITALAR") {
     const macro = src.nome_grupo_procedimento;
-    const micro = src.descricao_interna_procedimento || src.descricao_procedimento;
-    
+    const micro = src.descricao_interna_procedimento || src.descricao_procedimento || src.nome_procedimento;
     if (macro && micro && macro.trim().toUpperCase() !== micro.trim().toUpperCase()) {
       return `${macro.toUpperCase()} - ${micro.toUpperCase()}`;
     }
-
-    return (micro || macro || "Cirurgia não detalhada").toUpperCase();
+    return (micro || macro || "CIRURGIA NÃO DETALHADA").toUpperCase();
   }
 
-  const raw = src.nome_procedimento || 
-              src.descricao_procedimento || 
-              src.procedimentos?.[0]?.descricao_sigtap || 
-              '';
+  const formatarRetorno = (texto) => String(texto).replace(/\s+/g, ' ').trim().toUpperCase();
+  const normalizar = (texto) => texto.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 
-  if (!raw) return "Procedimento não informado";
+  let raw = src.descricao_interna_procedimento || src.nome_procedimento || src.descricao_procedimento || 
+            src.procedimentos?.[0]?.descricao_sigtap || src.procedimentos?.[0]?.descricao_interna || 
+            src.procedimentos?.[0]?.nome_procedimento || src.nome_grupo_procedimento || "";
 
-  const padroesGenericos = [
-      /CONSULTA\s*M[ÉE]DICA\s*EM\s*ATEN[CÇ][ÃA]O\s*ESPECIALIZADA/i,
-      /ATENDIMENTO\s*DE\s*URG[ÊE]NCIA/i,
-      /ATEN[CÇ][ÃA]O\s*B[ÁA]SICA/i,
-      /ATEN[CÇ][ÃA]O\s*PRIM[ÁA]RIA/i
-  ];
+  if (!raw || String(raw).trim() === "") return "PROCEDIMENTO NÃO INFORMADO";
 
-  const formatarRetorno = (texto) => {
-      const limpo = String(texto).replace(/\s+/g, ' ').trim();
-      if (/^CONSULTA M[ÉE]DICA EM ATEN[CÇ][ÃA]O ESPECIALIZADA$/i.test(limpo)) {
-          return "Consulta Especializada (Especialidade não detalhada)";
-      }
-      return limpo;
-  };
+  const limpo = formatarRetorno(raw);
+  const normLimpo = normalizar(limpo);
 
-  const ehGenerico = padroesGenericos.some(regex => regex.test(String(raw)));
-
-  if (ehGenerico) {
+  if (normLimpo.includes("atencao especializada") || normLimpo.includes("urgencia") || normLimpo.includes("atencao basica")) {
       
-      if (src.descricao_interna_procedimento) {
-          return formatarRetorno(src.descricao_interna_procedimento);
-      }
+      const candidatos = [
+        { tipo: 'grupo', valor: src.nome_grupo_procedimento },
+        { tipo: 'direto', valor: src.descricao_interna_procedimento },
+        { tipo: 'direto', valor: src.nome_procedimento },
+        { tipo: 'direto', valor: src.descricao_procedimento }
+      ];
 
       if (src.procedimentos && Array.isArray(src.procedimentos)) {
-          let procedimentosAgrupados = [];
-          
-          for (const item of src.procedimentos) {
-              const nomeItem = item.descricao_sigtap || item.nome_procedimento;
-              
-              if (nomeItem && !padroesGenericos.some(r => r.test(String(nomeItem)))) {
-                  procedimentosAgrupados.push(nomeItem.trim());
-              }
-          }
-          
-          if (procedimentosAgrupados.length > 0) {
-              return [...new Set(procedimentosAgrupados)].join(' + ');
-          }
+          src.procedimentos.forEach(p => {
+              candidatos.push({ tipo: 'direto', valor: p.descricao_sigtap });
+              candidatos.push({ tipo: 'direto', valor: p.descricao_interna });
+              candidatos.push({ tipo: 'direto', valor: p.nome_procedimento });
+          });
       }
 
-      if (src.nome_grupo_procedimento) {
-          return formatarRetorno(src.nome_grupo_procedimento);
+      for (const candidato of candidatos) {
+          if (!candidato.valor) continue;
+          
+          const textoGaveta = formatarRetorno(candidato.valor);
+          const normGaveta = normalizar(textoGaveta);
+          
+          if (normGaveta && normGaveta !== normLimpo && !normGaveta.includes("atencao") && !normGaveta.includes("urgencia") && !normGaveta.includes("basica")) {
+              if (candidato.tipo === 'grupo') return `CONSULTA ESPECIALIZADA EM ${textoGaveta}`;
+              return textoGaveta;
+          }
       }
+      
+      return "CONSULTA ESPECIALIZADA (ESPECIALIDADE NÃO INFORMADA PELO SISREG)";
   }
   
   if (src.procedimentos && Array.isArray(src.procedimentos) && src.procedimentos.length > 1) {
       let procedimentosAgrupados = [];
-      
       for (const item of src.procedimentos) {
-          const nomeItem = item.descricao_sigtap || item.nome_procedimento;
-          
-          if (nomeItem && !padroesGenericos.some(r => r.test(String(nomeItem)))) {
-              procedimentosAgrupados.push(nomeItem.trim());
+          const nomeItem = formatarRetorno(item.descricao_sigtap || item.descricao_interna || item.nome_procedimento || "");
+          if (nomeItem && !normalizar(nomeItem).includes("atencao especializada") && !normalizar(nomeItem).includes("urgencia")) {
+              procedimentosAgrupados.push(nomeItem);
           }
       }
-      
       let unicos = [...new Set(procedimentosAgrupados)];
-      if (unicos.length > 1) {
-          return unicos.join(' + ');
-      }
+      if (unicos.length > 0) return unicos.join(' + ');
   }
 
-  return formatarRetorno(raw);
+  return limpo;
 };
 
 function App() {
-  const [visaoAtual, setVisaoAtual] = useState('consulta');
-  const [cpf, setCpf] = useState('')
+  const [visaoAtual, setVisaoAtual] = useState(() => sessionStorage.getItem('@sisreg/visao') || 'consulta');
+  const [cpf, setCpf] = useState('');
   const [pedidos, setPedidos] = useState([])
   const [loading, setLoading] = useState(false)
   const [erro, setErro] = useState('')
@@ -427,6 +558,16 @@ function App() {
 
   const [captchaGerado, setCaptchaGerado] = useState('');
   const [captchaDigitado, setCaptchaDigitado] = useState('');
+
+  const resultadosRef = useRef(null);
+
+  useEffect(() => {
+    if (confirmado && resultadosRef.current) {
+      setTimeout(() => {
+        resultadosRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 100); 
+    }
+  }, [confirmado]);
 
   const gerarCaptcha = () => {
     const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -442,12 +583,81 @@ function App() {
     gerarCaptcha();
   }, []);
 
+  useEffect(() => {
+    sessionStorage.setItem('@sisreg/visao', visaoAtual);
+  }, [visaoAtual]);
+
   const [filtroAno, setFiltroAno] = useState('TODOS')
   const [filtroStatus, setFiltroStatus] = useState('TODOS')
   const [filtroSituacao, setFiltroSituacao] = useState('TODOS')
   const [filtroTipo, setFiltroTipo] = useState('TODOS')
   const [ordem, setOrdem] = useState('PROCEDIMENTO')
   const [paginaAtual, setPaginaAtual] = useState(1);
+
+  const ultimaAttRef = useRef(null);
+  const primeiroAcessoRef = useRef(true);
+  const radarAtivoRef = useRef(true);
+  const nomeMaeValidadoRef = useRef('');
+
+  useEffect(() => {
+    radarAtivoRef.current = true;
+
+    const checarAtualizacao = async () => {
+      if (!radarAtivoRef.current) return;
+
+      try {
+        const resposta = await axios.get(`${API_BASE_URL}/status-snapshot`);
+        const timestampAtual = resposta.data.ultima_atualizacao;
+        
+        if (timestampAtual !== null) {
+          
+          if (ultimaAttRef.current === null && !primeiroAcessoRef.current) {
+            console.log("Varredura concluída! Atualizando os dados silenciosamente...");
+            radarAtivoRef.current = false;
+            
+            const cpfAtual = cpf;
+            const maeAtual = nomeMaeValidadoRef.current;
+            
+            if (cpfAtual) {
+                axios.get(`${API_BASE_URL}/consulta/${cpfAtual.trim()}`, {
+                    params: maeAtual ? { nome_mae: maeAtual } : {}
+                }).then(res => {
+                    let dadosNovos = Array.isArray(res.data) ? res.data : (res.data.lista_exames || []);
+                    setPedidos(filtrarUltimos5Anos(dadosNovos)); 
+                }).catch(e => console.log("Erro no refresh invisível", e));
+            }
+            return;
+          }
+          
+          if (primeiroAcessoRef.current) {
+            ultimaAttRef.current = timestampAtual;
+            primeiroAcessoRef.current = false;
+            console.log("Snapshot consolidado. Desligando o radar.");
+            radarAtivoRef.current = false;
+            return;
+          }
+        } 
+        else {
+          if (primeiroAcessoRef.current) {
+            ultimaAttRef.current = null;
+            primeiroAcessoRef.current = false;
+            console.log("Servidor em fase de extração. Radar em prontidão...");
+          }
+        }
+      } catch (erro) {
+      }
+
+      if (radarAtivoRef.current) {
+        setTimeout(checarAtualizacao, 10000);
+      }
+    };
+
+    checarAtualizacao();
+
+    return () => {
+      radarAtivoRef.current = false; 
+    };
+  }, []);
 
   const limparDadosAnteriores = () => {
     setPedidos([]);
@@ -458,7 +668,7 @@ function App() {
     setNomeMae('');
   };
 
-  const buscarDados = async (e) => {
+  const buscarDados = async (e) => {    
     e.preventDefault()
     
     if (!cpf.trim()) {
@@ -538,6 +748,8 @@ function App() {
       const response = await axios.get(`${API_BASE_URL}/consulta/${cpf.trim()}`, {
         params: { nome_mae: nomeMae }
       });
+
+      nomeMaeValidadoRef.current = nomeMae.trim();
       
       let dados = [];
       if (Array.isArray(response.data)) {
@@ -549,6 +761,7 @@ function App() {
       }
 
       const dadosFiltrados = filtrarUltimos5Anos(dados);
+      
       setPedidos(dadosFiltrados);
       
       if (dadosFiltrados.length === 0) {
@@ -602,7 +815,7 @@ function App() {
     if (filtroTipo === 'HOSPITALAR') {
       lista = lista.filter(item => item._source?.tipo_registro === 'HOSPITALAR');
     } else if (filtroTipo === 'AMBULATORIAL') {
-      lista = lista.filter(item => item._source?.tipo_registro !== 'HOSPITALAR');
+      lista = lista.filter(item => item._source?.tipo_registro === 'AMBULATORIAL'); 
     }
 
     if (filtroSituacao !== 'TODOS') {
@@ -610,19 +823,19 @@ function App() {
             const source = item._source || {};
             const traduzido = traduzirStatus(source.status_solicitacao, source.tipo_registro);
             const info = getSituacaoInfo(traduzido);
-            
             const dataDoAgendamento = source.data_marcacao || source.data_atualizacao_marcacao;
             const ehFuturo = info.classe === 'sucesso' && isDataFutura(dataDoAgendamento);
+            const filtroTextoPuro = filtroSituacao.replace(/^[^\w\s]+/g, '').trim();
 
-            if (filtroSituacao === "🔵 AGENDAMENTO FUTURO") {
+            if (filtroTextoPuro === "AGENDAMENTO FUTURO") {
                 return ehFuturo;
             }
             
-            if (filtroSituacao === "🟢 CONFIRMADO / AUTORIZADO") {
-                return `${info.emoji} ${info.label}` === filtroSituacao && !ehFuturo;
+            if (filtroTextoPuro === "CONFIRMADO / AUTORIZADO") {
+                return info.label === filtroTextoPuro && !ehFuturo;
             }
             
-            return `${info.emoji} ${info.label}` === filtroSituacao;
+            return info.label === filtroTextoPuro;
         });
     }
     
@@ -715,8 +928,7 @@ function App() {
         <>
           <header className="busca-header">
             <h2 className="busca-titulo">Acompanhamento de Solicitações do Cidadão</h2>
-            <p className="busca-subtitulo">Digite seu CPF abaixo e se informe sobre a situação atualizada dos seus agendamentos, exames e consultas.
-            </p>
+            <p className="busca-subtitulo">Digite seu CPF abaixo e se informe sobre a situação atualizada dos seus agendamentos, exames e consultas.</p>
           </header>
 
       <div className="search-container">
@@ -765,7 +977,13 @@ function App() {
 
       {solicitandoValidacao && (
         <div className="modal-overlay">
-          <div className="modal-box">
+          <form 
+            onSubmit={(e) => { 
+              e.preventDefault();
+              validarMae(); 
+            }} 
+            className="modal-box"
+          >
             <div className="modal-header">
               <h3>Segurança Adicional</h3>
             </div>
@@ -782,24 +1000,31 @@ function App() {
                     setErro('');
                 }}
                 onFocus={() => setErro('')}
+                autoFocus
               />
 
               {erro && <div className="error-msg-modal">{erro}</div>}
 
               <div className="modal-actions">
-                <button className="btn-cancelar" onClick={cancelarConfirmacao}>Cancelar</button>
-                <button className="btn-confirmar" onClick={validarMae} disabled={loading}>
+                <button type="button" className="btn-cancelar" onClick={cancelarConfirmacao}>Cancelar</button>
+                <button type="submit" className="btn-confirmar" disabled={loading}>
                   {loading ? 'Verificando...' : 'Verificar'}
                 </button>
               </div>
             </div>
-          </div>
+          </form>
         </div>
       )}
 
       {pedidos.length > 0 && !confirmado && !solicitandoValidacao && primeiroPedido && (
         <div className="modal-overlay">
-          <div className="modal-box">
+          <form 
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (termoAceito) setConfirmado(true);
+            }}
+            className="modal-box"
+          >
             <div className="modal-header"><h3>Confirmação de Identidade</h3></div>
             <div className="modal-body">
               <p style={{marginBottom: '15px', topBottom: '15px', fontSize: '1rem'}}>Para proteger seus dados, confirme se as informações abaixo correspondem a você:</p>
@@ -834,21 +1059,21 @@ function App() {
               <div className="terms-container">
                 <label className="terms-label">
                   <input type="checkbox" checked={termoAceito} onChange={(e) => setTermoAceito(e.target.checked)} className="terms-checkbox"/>
-                  Declaro que sou o titular dos dados ou seu representante legal.
+                  Declaro que sou o titular dos dados ou seu representative legal.
                 </label>
               </div>
               
               <div className="modal-actions">
-                <button className="btn-cancelar" onClick={cancelarConfirmacao}>NÃO SOU EU</button>
-                <button className="btn-confirmar" onClick={() => setConfirmado(true)} disabled={!termoAceito}>SIM, CONFIRMAR</button>
+                <button type="button" className="btn-cancelar" onClick={cancelarConfirmacao}>NÃO SOU EU</button>
+                <button type="submit" className="btn-confirmar" disabled={!termoAceito}>SIM, CONFIRMAR</button>
               </div>
             </div>
-          </div>
+          </form>
         </div>
       )}
 
       {pedidos.length > 0 && confirmado && primeiroPedido && (
-        <>
+        <div ref={resultadosRef} className="dashboard-resultados-container" style={{ scrollMarginTop: '20px' }}>
           <div className="patient-header">
              <h2>Procedimentos do Paciente {gerarIniciais(primeiroPedido.no_usuario)}</h2>
              <p className="patient-dob">Nascimento: {formatarData(primeiroPedido.dt_nascimento_usuario)}</p>
@@ -908,15 +1133,16 @@ function App() {
               <div className="legend-section">
                 <span className="legend-title">Legenda de Situação:</span>
                 <div className="legend-grid">
-                  <div className="legend-item"><div className="legend-header"><span className="legend-dot ind-alerta"></span><span className="emoji-fix">🟡</span> PENDENTE</div></div>
-                  <div className="legend-item"><div className="legend-header"><span className="legend-dot ind-sucesso"></span><span className="emoji-fix">🟢</span> CONFIRMADO / AUTORIZADO</div></div>
-                  <div className="legend-item"><div className="legend-header"><span className="legend-dot ind-perigo"></span><span className="emoji-fix">🔴</span> NEGADO / CANCELADO</div></div>
-                  <div className="legend-item"><div className="legend-header"><span className="legend-dot ind-laranja"></span><span className="emoji-fix">🔁</span> DEVOLVIDO / REENVIADO</div></div>
-                  <div className="legend-item"><div className="legend-header"><span className="legend-dot ind-rosa"></span><span className="emoji-fix">⚠️</span> FALTA / AUSÊNCIA</div></div>
-                  <div className="legend-item"><div className="legend-header"><span className="legend-dot ind-info"></span><span className="emoji-fix">🔵</span> AGENDAMENTO FUTURO</div></div>
+                  <div className="legend-item"><div className="legend-header"><span className="legend-dot ind-alerta"></span><IconeStatus tipo="alerta" className="icone-legenda" /> PENDENTE</div></div>
+                  <div className="legend-item"><div className="legend-header"><span className="legend-dot ind-sucesso"></span><IconeStatus tipo="sucesso" className="icone-legenda" /> CONFIRMADO / AUTORIZADO</div></div>
+                  <div className="legend-item"><div className="legend-header"><span className="legend-dot ind-perigo"></span><IconeStatus tipo="perigo" className="icone-legenda" /> NEGADO / CANCELADO</div></div>
+                  <div className="legend-item"><div className="legend-header"><span className="legend-dot ind-laranja"></span><IconeStatus tipo="laranja" className="icone-legenda" /> DEVOLVIDO / REENVIADO</div></div>
+                  <div className="legend-item"><div className="legend-header"><span className="legend-dot ind-rosa"></span><IconeStatus tipo="rosa" className="icone-legenda" /> FALTA / AUSÊNCIA</div></div>
+                  <div className="legend-item"><div className="legend-header"><span className="legend-dot ind-info"></span><IconeStatus tipo="futuro" className="icone-legenda" /> AGENDAMENTO FUTURO</div></div>
                 </div>
               </div>
             </div>
+
           </div>
 
           <div className="results-container">
@@ -926,10 +1152,12 @@ function App() {
                 <h3 className="empty-state-titulo">
                   Nenhum registro encontrado...
                 </h3>
+                
                 <p className="empty-state-texto">
                   O paciente não possui agendamentos
-                  {filtroSituacao !== 'TODOS' && <span> com o status <strong> "{filtroSituacao.replace(/^[^\w\s]+/, '').trim()}"</strong></span>}
-                  {filtroAno !== 'TODOS' && <strong> no ano de {filtroAno}</strong>}.
+                  {filtroTipo !== 'TODOS' && <span> em <strong>{filtroTipo}</strong></span>}
+                  {filtroSituacao !== 'TODOS' && <span> com o status <strong>"{filtroSituacao.replace(/^[^\w\s]+/, '').trim()}"</strong></span>}
+                  {filtroAno !== 'TODOS' && <span> no ano de <strong>{filtroAno}</strong></span>}.
                 </p>
                 
                 <button 
@@ -965,8 +1193,18 @@ function App() {
               const isHospitalar = source.tipo_registro === "HOSPITALAR";
               const coresEtiqueta = getCoresEtiqueta(classeCard);
 
+              const statusUpper = String(source.status_solicitacao).toUpperCase();
+              const deveMostrarFila = (
+                  !isHospitalar &&
+                  (statusUpper.includes("PENDENTE") || statusUpper.includes("ESPERA") || statusUpper.includes("AGUARDANDO")) &&
+                  !statusUpper.includes("AGENDADA") && 
+                  !statusUpper.includes("AGENDAMENTO") &&
+                  !statusUpper.includes("CONFIRMAD") &&
+                  !statusUpper.includes("AUTORIZAD")
+              );
+
               return (
-                <div key={source.codigo_solicitacao || index} className={`result-card tipo-${classeCard}`}>
+                <div key={source.codigo_solicitacao ? `${source.codigo_solicitacao}-${index}` : index} className={`result-card tipo-${classeCard}`}>
                   
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '15px', marginBottom: '25px' }}>
                     
@@ -1023,7 +1261,7 @@ function App() {
                     </div>
 
                     {isHospitalar && source.data_reserva && (
-                      <div className="info-row" style={{ color: '#9b59b6', fontWeight: 'bold' }}>
+                      <div className="info-row">
                         <strong>DATA DA CIRURGIA:</strong> {formatarData(source.data_reserva)}
                       </div>
                     )}
@@ -1033,11 +1271,38 @@ function App() {
                     </div>
                     
                     <div className="status-full">
-                      <span className="emoji-grande emoji-fix">{emojiCard}</span>
+                      <span className="icone-status-card">
+                        <IconeStatus tipo={classeCard} />
+                      </span>
                       <span className="status-texto" style={ehAgendamentoFuturo ? { color: '#3498db', fontWeight: 'bold' } : {}}>
                         {textoStatusCard}
                       </span>
                     </div>
+
+                    {deveMostrarFila && source.posicao_fila_calculada && (
+                      <div className="posicao-fila-container">
+                        <div className="posicao-destaque">
+                          <span className="posicao-numero">{source.posicao_fila_calculada}º</span>
+                          <span className="posicao-texto">na fila de espera</span>
+                        </div>
+                        <div className="aviso-fila-viva">
+                          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="icone-aviso-fila" style={{ marginRight: '8px' }}>
+                            <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"></path>
+                            <path d="M12 9v4"></path>
+                            <path d="M12 17h.01"></path>
+                          </svg>
+                          <span>Esta fila é dinâmica e viva! Sua posição pode sofrer alterações devido à entrada de pacientes com classificações de risco diferentes.</span>
+                        </div>
+                      </div>
+                    )}
+
+                    {deveMostrarFila && !source.posicao_fila_calculada && nomeProcedimento && source.data_solicitacao && (
+                        <PainelPosicaoFila 
+                          procedimento={nomeProcedimento} 
+                          status={source.status_solicitacao} 
+                          dataSolicitacao={source.data_solicitacao} 
+                        />
+                    )}
 
                     {(situacaoInfo.classe === 'sucesso' || classeCard === 'futuro') && (
                        <div className="destaque-contato" style={{ backgroundColor: bgTema, border: `1px solid ${bordaTema}`, borderRadius: '6px', padding: '12px', marginTop: '12px' }}>
@@ -1060,7 +1325,7 @@ function App() {
                           </div>
                           
                           <div className="info-row" style={{color: ehAgendamentoFuturo ? 'inherit' : '#666666'}}>
-                            <strong style={{ color: corTextoDetalhes }}>UNIDADE EXECUTANTE:</strong> {source.nome_unidade_executante || 'Consulte a unidade solicitante'}
+                            <strong style={{ color: corTextoDetalhes }}>UNIDADE EXECUTANTE:</strong> {source.nome_unidade_executante || 'Consulte a unidade solicitante.'}
                           </div>
 
                           {source.telefone_unidade_executante && (
@@ -1072,7 +1337,7 @@ function App() {
                                 style={{ color: corTextoDetalhes, textDecoration: 'underline', fontWeight: 'bold', marginLeft: '5px' }}
                                 title="Clique para ligar"
                               >
-                                📞 {formatarTelefone(source.telefone_unidade_executante)}
+                                <IconeStatus tipo="telefone" className="icone-telefone" /> {formatarTelefone(source.telefone_unidade_executante)}
                               </a>
                             </div>
                           )}
@@ -1080,9 +1345,16 @@ function App() {
                     )}
 
                     {situacaoInfo.classe === 'perigo' && motivoCancelamento && (
-                      <div className="box-motivo-cancelamento">
-                        <strong className="titulo-cancelamento">MOTIVO DO CANCELAMENTO OU NEGATIVA:</strong>
-                        <span className="texto-cancelamento">{motivoCancelamento}</span>
+                      <div className="box-motivo box-motivo-perigo">
+                        <strong className="titulo-motivo-perigo">MOTIVO DO CANCELAMENTO OU NEGATIVA:</strong>
+                        <span className="texto-motivo">{motivoCancelamento}</span>
+                     </div>
+                    )}
+
+                    {situacaoInfo.classe === 'laranja' && motivoCancelamento && (
+                      <div className="box-motivo box-motivo-laranja">
+                        <strong className="titulo-motivo-laranja">MOTIVO DA DEVOLUÇÃO (PENDENTE DE CORREÇÃO):</strong>
+                        <span className="texto-motivo">{motivoCancelamento}</span>
                      </div>
                     )}
                     
@@ -1100,7 +1372,7 @@ function App() {
               </div>
             )}
           </div>
-        </>
+        </div>
       )}
       </>
       )}

@@ -39,6 +39,11 @@
   --alpha-dark: rgba(0, 0, 0, 0.6);
   --alpha-white: rgba(255, 255, 255, 0.2);
   --alpha-glow-red: rgba(214, 11, 18, 0.15);
+
+  --bg-alerta-suave: #fffbeb;
+  --border-alerta-suave: #fde68a;
+  --bg-perigo-suave: #fdf0f0;
+  --border-perigo-suave: #fababa;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -575,7 +580,7 @@ h1, h2, h3, h4, h5, h6, strong, b,
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: 30px;
-  padding: 10px 0 40px 0;
+  padding: 10px 0 0px 0;
 }
 
 .card-especialidade {
@@ -666,9 +671,39 @@ h1, h2, h3, h4, h5, h6, strong, b,
 .busca-titulo { font-size: 1.8rem; color: var(--gov-blue); text-transform: uppercase; margin-bottom: 10px; font-family: 'AktivGrotesk-XBold', sans-serif; }
 .busca-subtitulo { font-size: 1.1rem; color: var(--text-main); font-weight: 600; }
 
-.box-motivo-cancelamento { background-color: #fdf0f0; border: 1px solid #fababa; border-radius: 6px; padding: 12px; margin-top: 12px; }
-.titulo-cancelamento { color: var(--gov-red); display: block; margin-bottom: 4px; font-weight: bold; }
-.texto-cancelamento { font-size: 0.95rem; color: var(--text-main); line-height: 1.4; }
+.box-motivo { 
+  border-radius: 6px; 
+  padding: 12px; 
+  margin-top: 12px; 
+}
+
+.texto-motivo { 
+  font-size: 0.95rem; 
+  color: var(--text-main); 
+  line-height: 1.4; 
+}
+
+.box-motivo-perigo { 
+  background-color: var(--bg-perigo-suave); 
+  border: 1px solid var(--border-perigo-suave); 
+}
+.titulo-motivo-perigo { 
+  color: var(--gov-red); 
+  display: block; 
+  margin-bottom: 4px; 
+  font-weight: bold; 
+}
+
+.box-motivo-laranja { 
+  background-color: #fff7ed; 
+  border: 1px solid #fed7aa; 
+}
+.titulo-motivo-laranja { 
+  color: var(--cor-laranja); 
+  display: block; 
+  margin-bottom: 4px; 
+  font-weight: bold; 
+}
 
 .empty-state-box { text-align: center; padding: 30px 20px; background-color: var(--gov-bg); border-radius: 8px; border: 2px dashed var(--gray-heavy); color: var(--text-main); margin-top: 0; }
 .empty-state-titulo { margin: 0 0 10px 0; color: var(--text-muted); font-size: 1.2rem; }
@@ -677,11 +712,7 @@ h1, h2, h3, h4, h5, h6, strong, b,
 .titulo-vermelho { color: var(--gov-red) !important; }
 .texto-vermelho { color: var(--gov-red); }
 .erro-centralizado { text-align: center; margin: 40px auto; max-width: 600px; }
-.erro-dica { font-size: 0.9rem; margin-top: 10px; font-weight: normal; }
-
-.texto-vermelho { color: var(--gov-red); }
-.erro-centralizado { text-align: center; margin: 40px auto; max-width: 600px; }
-.erro-dica { font-size: 0.9rem; margin-top: 10px; color: var(--text-muted); font-family: 'AktivGrotesk-Regular', sans-serif; }
+.erro-dica { font-size: 0.9rem; margin-top: 10px; color: var(--text-muted); font-family: 'AktivGrotesk-Regular', sans-serif; font-weight: normal; }
 
 .titulo-com-icone {
   display: flex;
@@ -934,4 +965,116 @@ h1, h2, h3, h4, h5, h6, strong, b,
 .skeleton-texto-curto {
   width: 80px;
   margin: 0 !important;
+}
+
+.posicao-fila-container {
+  background-color: transparent;
+  padding-top: 20px;
+  margin-top: 15px;
+  border-top: 1px dashed var(--gray-border);
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  animation: fadeIn 0.4s ease;
+}
+
+.posicao-destaque {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+}
+
+.posicao-numero {
+  font-family: 'AktivGrotesk-XBold', sans-serif;
+  font-size: 1.3rem;
+  color: var(--gov-blue);
+  border: 2.5px solid var(--cor-alerta);
+  background-color: var(--white);
+  
+  min-width: 50px;
+  width: max-content;
+  height: 50px;
+  padding: 0 12px;
+  border-radius: 25px;
+  
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0; 
+  box-shadow: 0 4px 10px var(--alpha-light);
+}
+
+.posicao-texto {
+  font-family: 'AktivGrotesk-XBold', sans-serif;
+  font-size: 1rem;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.aviso-fila-viva {
+  background-color: var(--bg-alerta-suave);
+  border: 1px solid var(--border-alerta-suave);
+  border-radius: 6px;
+  color: var(--text-main);
+  font-size: 0.95rem; 
+  font-family: 'AktivGrotesk-Regular', sans-serif;
+  line-height: 1.5;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 15px; 
+}
+
+.icone-aviso-fila {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--cor-alerta);
+  width: 18px; 
+  height: 18px;
+}
+
+.icone-giratorio {
+  flex-shrink: 0;
+  animation: girarLoader 1.5s linear infinite;
+}
+
+@keyframes girarLoader {
+  100% { transform: rotate(360deg); }
+}
+
+.box-carregando-fila {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: var(--gov-blue);
+  font-family: 'AktivGrotesk-XBold', sans-serif;
+  font-size: 1.1rem;
+}
+
+.icone-status-card {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+}
+
+.icone-status-card svg {
+  width: 100%;
+  height: 100%;
+}
+
+.icone-legenda {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.icone-telefone {
+  width: 15px;
+  height: 15px;
+  margin-right: 6px;
+  vertical-align: middle;
 }
