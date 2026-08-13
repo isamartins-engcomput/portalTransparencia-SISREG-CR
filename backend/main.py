@@ -324,10 +324,10 @@ def gerar_mock_supremo_testes(fase_validacao, nome_mae_digitado):
             raise HTTPException(status_code=403, detail="Nome da mãe incorreto. (Dica do Teste: é Margarida)")
 
     base_paciente = {
-        "no_usuario": "ISADORA SUPREMA DA SILVA",
+        "no_usuario": "FULANO DA SILVA JUNIOR",
         "dt_nascimento_usuario": "2006-06-19",
         "no_mae_usuario": "MARGARIDA TESTE",
-        "endereco_completo": "RUA DOS BUGS TRATADOS, 404 - TRÊS LAGOAS - MS",
+        "endereco_completo": "RUA DAS FLORES, 404 - TRÊS LAGOAS - MS",
         "telefone_unificado": "67999999999, 6733330000"
     }
 

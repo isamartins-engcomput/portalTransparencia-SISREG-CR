@@ -1078,3 +1078,47 @@ h1, h2, h3, h4, h5, h6, strong, b,
   margin-right: 6px;
   vertical-align: middle;
 }
+
+.botao-ajuda-flutuante {
+  position: fixed;
+  top: 20px;
+  right: 20px; 
+  z-index: 9999; 
+  
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  
+  background-color: var(--white);
+  color: var(--gov-blue);
+  border: 2px solid var(--gov-blue);
+  border-radius: 50px; 
+  
+  font-family: 'AktivGrotesk-XBold', sans-serif;
+  font-size: 0.9rem;
+  font-weight: bold;
+  text-transform: uppercase;
+  text-decoration: none !important;
+  
+  cursor: pointer;
+  box-shadow: 0 4px 10px var(--alpha-light);
+  transition: all 0.3s ease;
+}
+
+.botao-ajuda-flutuante:hover {
+  background-color: var(--gov-blue) !important;
+  color: var(--white) !important;
+  border-color: var(--gov-blue) !important;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 15px var(--alpha-medium);
+}
+
+.botao-ajuda-flutuante svg {
+  stroke: var(--gov-red);
+  transition: stroke 0.3s ease;
+}
+
+.botao-ajuda-flutuante:hover svg {
+  stroke: var(--white) !important;
+}

@@ -875,6 +875,21 @@ function App() {
 
   return (
     <div className="app-container">
+      
+      <a 
+        href="https://docs.google.com/document/d/1YJi1qKZjkwGr2k9H4HiqG0ALX0oSjmm97-NIhR1Cj6U/edit?usp=sharing" 
+        target="_blank" 
+        rel="noopener noreferrer"
+        className="botao-ajuda-flutuante"
+      >
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="12" cy="12" r="10"></circle>
+          <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
+          <line x1="12" y1="17" x2="12.01" y2="17"></line>
+        </svg>
+        <span>Como usar?</span>
+      </a>
+
       <header className="app-header">
         <img src={logoPrefeitura} alt="Prefeitura" className="header-logo" />
         <h1 className="app-title">PORTAL DA TRANSPARÊNCIA<br />CENTRAL DE REGULAÇÃO</h1>
