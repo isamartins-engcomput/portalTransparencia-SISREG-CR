@@ -18,3 +18,5 @@ teste.mp4
 docs&refs/
 videos-testes/
 registroSoftw-ocultados.mp4
+*.log
+backend_sisreg.log*

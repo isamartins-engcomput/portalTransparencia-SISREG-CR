@@ -271,7 +271,7 @@ const PainelPosicaoFila = ({ procedimento, status, dataSolicitacao }) => {
              <path d="M12 9v4"></path>
              <path d="M12 17h.01"></path>
            </svg>
-           <span>Não foi possível calcular a posição exata neste momento, mas fique tranquilo(a): sua solicitação segue ativa e em análise. O servidor está sincronizando as filas neste exato momento. Permaneça nesta tela e sua posição aparecerá automaticamente em instantes.</span>
+           <span>Não foi possível calcular a posição exata neste momento, mas fique tranquilo(a): sua solicitação segue ativa e em análise.</span>
          </div>
       </div>
     );
@@ -724,10 +724,14 @@ function App() {
         }
       }
     } catch (error) {
+      console.error("ERRO COMPLETO:", error);
+      console.error("RESPOSTA DO SERVIDOR:", error.response);
+      console.dir(error);
+
       if (error.code === 'ECONNABORTED') {
         setErro('O sistema do governo está demorando muito para responder. Por favor, tente novamente em alguns minutos.');
       } else if (!error.response) {
-        setErro('Falha na ligação. Verifique a sua internet ou tente novamente mais tarde.');
+        setErro(`Falha na ligação. Detalhe: ${error.message}`);
       } else {
         setErro('Ocorreu um erro ao consultar os dados. Tente novamente.');
       }
@@ -875,24 +879,24 @@ function App() {
 
   return (
     <div className="app-container">
-      
-      <a 
-        href="https://docs.google.com/document/d/1YJi1qKZjkwGr2k9H4HiqG0ALX0oSjmm97-NIhR1Cj6U/edit?usp=sharing" 
-        target="_blank" 
-        rel="noopener noreferrer"
-        className="botao-ajuda-flutuante"
-      >
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-          <circle cx="12" cy="12" r="10"></circle>
-          <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
-          <line x1="12" y1="17" x2="12.01" y2="17"></line>
-        </svg>
-        <span>Como usar?</span>
-      </a>
 
       <header className="app-header">
         <img src={logoPrefeitura} alt="Prefeitura" className="header-logo" />
         <h1 className="app-title">PORTAL DA TRANSPARÊNCIA<br />CENTRAL DE REGULAÇÃO</h1>
+
+        <a 
+          href="https://docs.google.com/document/d/1YJi1qKZjkwGr2k9H4HiqG0ALX0oSjmm97-NIhR1Cj6U/edit?usp=sharing" 
+          target="_blank" 
+          rel="noopener noreferrer"
+          className="botao-ajuda-flutuante"
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="10"></circle>
+            <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
+            <line x1="12" y1="17" x2="12.01" y2="17"></line>
+          </svg>
+          <span>Como usar?</span>
+        </a>
 
         <div className="nav-abas-container">
           
@@ -1074,7 +1078,7 @@ function App() {
               <div className="terms-container">
                 <label className="terms-label">
                   <input type="checkbox" checked={termoAceito} onChange={(e) => setTermoAceito(e.target.checked)} className="terms-checkbox"/>
-                  Declaro que sou o titular dos dados ou seu representative legal.
+                  Declaro que sou o titular dos dados ou seu representante legal.
                 </label>
               </div>
               
@@ -1090,7 +1094,12 @@ function App() {
       {pedidos.length > 0 && confirmado && primeiroPedido && (
         <div ref={resultadosRef} className="dashboard-resultados-container" style={{ scrollMarginTop: '20px' }}>
           <div className="patient-header">
-             <h2>Procedimentos do Paciente {gerarIniciais(primeiroPedido.no_usuario)}</h2>
+             <h2>
+                Procedimentos do Paciente:
+                <span style={{ display: 'block', marginTop: '5px', fontSize: '1.6rem' }}>
+                  {gerarIniciais(primeiroPedido.no_usuario)}
+                </span>
+              </h2>
              <p className="patient-dob">Nascimento: {formatarData(primeiroPedido.dt_nascimento_usuario)}</p>
              {ultimaAtualizacaoGeral && <div className="last-update-banner">Sistema atualizado no dia <strong>{formatarData(ultimaAtualizacaoGeral)}</strong></div>}
           </div>

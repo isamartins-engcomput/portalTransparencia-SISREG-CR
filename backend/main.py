@@ -9,11 +9,33 @@ import asyncio
 import re
 from apscheduler.schedulers.background import BackgroundScheduler
 import calendar
+import logging
+from logging.handlers import RotatingFileHandler
+from zoneinfo import ZoneInfo
+from contextlib import asynccontextmanager
 
 load_dotenv()
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    handlers=[
+        RotatingFileHandler("backend_sisreg.log", maxBytes=5*1024*1024, backupCount=3, encoding='utf-8'),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
+
 USUARIO = os.getenv("SISREG_USUARIO")
 SENHA = os.getenv("SISREG_SENHA")
+
+if not USUARIO or not SENHA:
+    raise RuntimeError("Credenciais SISREG não configuradas no .env")
+
+CODIGO_MUNICIPIO = os.getenv("SISREG_CODIGO_MUNICIPIO", "500830")
+AMBIENTE = os.getenv("AMBIENTE", "PRODUCAO") 
+VERIFY_SSL = os.getenv("VERIFY_SSL", "False").lower() == "true"
+ORIGINS_PERMITIDAS = os.getenv("ORIGINS_PERMITIDAS", "*").split(",")
 
 CACHE_FILAS = {"dados_fila": [], "ultima_atualizacao": None}
 CACHE_FALTOMETRO = {"historico_meses": {}, "ultima_atualizacao": None}
@@ -21,19 +43,58 @@ CACHE_POSICOES_EXATAS = {}
 CACHE_FILAS_ORDENADAS = {}
 ULTIMA_ATUALIZACAO_SNAPSHOT = None
 
-app = FastAPI()
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+
+    fuso_ms = ZoneInfo("America/Campo_Grande")
+    scheduler = BackgroundScheduler(timezone=fuso_ms)
+
+    scheduler.add_job(lambda: asyncio.run(atualizar_cache_filas()), 'cron', hour=4, minute=0)
+    scheduler.add_job(lambda: asyncio.run(atualizar_cache_faltometro()), 'cron', hour=4, minute=15)
+    scheduler.add_job(lambda: asyncio.run(atualizar_posicoes_exatas()), 'cron', hour=4, minute=30)
+    scheduler.start()    
+    
+    asyncio.create_task(inicializacao_assincrona())
+    
+    yield
+    
+    scheduler.shutdown()
+    logger.info("[SHUTDOWN] Agendador CRON desligado com segurança.")
+
+app = FastAPI(lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], 
-    allow_credentials=True,
+    allow_origins=ORIGINS_PERMITIDAS,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-URL_SOLICITACOES_SISREG = "https://sisreg-es.saude.gov.br/solicitacao-ambulatorial-ms-tres-lagoas"
-URL_MARCACOES_SISREG = "https://sisreg-es.saude.gov.br/marcacao-ambulatorial-ms-tres-lagoas"
-URL_HOSPITALAR_SISREG = "https://sisreg-es.saude.gov.br/solicitacao-hospitalar-ms-tres-lagoas"
+PLANILHA_STATUS_TRADUCAO = {
+    "SOLICITAÇÃO / PENDENTE / REGULADOR": "Pendente de análise da regulação",
+    "SOLICITAÇÃO / DEVOLVIDA / REGULADOR": "Devolvida pela regulação para correção",
+    "SOLICITAÇÃO / NEGADA / REGULADOR": "Solicitação negada pela regulação",
+    "SOLICITAÇÃO / PENDENTE / FILA DE ESPERA": "Pendente de agendamento (Fila)",
+    "SOLICITAÇÃO / REENVIADA / REGULADOR": "Reenviada para análise da regulação",
+    "SOLICITAÇÃO / CANCELADA / SOLICITANTE": "Solicitação Cancelada",
+    "SOLICITAÇÃO / CANCELADA / REGULADOR": "Solicitação Cancelada",
+    "SOLICITAÇÃO / CANCELADA / COORDENADOR": "Solicitação Cancelada",
+    "AGENDAMENTO / PENDENTE CONFIRMAÇÃO / EXECUTANTE": "Agendada pendente de confirmação",
+    "AGENDAMENTO / CANCELADO / REGULADOR": "Solicitação Cancelada",
+    "AGENDAMENTO / CANCELADO / SOLICITANTE": "Solicitação Cancelada",
+    "AGENDAMENTO / CANCELADO / COORDENADOR": "Solicitação Cancelada",
+    "AGENDAMENTO / CANCELADO": "Solicitação Cancelada",
+    "AGENDAMENTO / FALTA / USUARIO": "Paciente não compareceu",
+    "FALTA": "Paciente não compareceu"
+}
+
+URL_SOLICITACOES_SISREG = os.getenv("SISREG_URL_AMBULATORIAL")
+URL_MARCACOES_SISREG = os.getenv("SISREG_URL_MARCACAO")
+URL_HOSPITALAR_SISREG = os.getenv("SISREG_URL_HOSPITALAR")
+
+if not URL_SOLICITACOES_SISREG or not URL_MARCACOES_SISREG or not URL_HOSPITALAR_SISREG:
+    raise RuntimeError("URLs do SISREG não configuradas no .env")
 
 def normalizar_texto(texto: str):
     if not texto: return ""
@@ -156,7 +217,7 @@ def agrupar_nome_procedimento(src):
 async def atualizar_posicoes_exatas():
     global CACHE_POSICOES_EXATAS
     try:
-        print("[CRON] Iniciando Extração Massiva (Scroll API) - Recorte Estrito de 5 Anos...", flush=True)
+        logger.info("[CRON] Iniciando Extração Massiva (Scroll API) - Recorte Estrito de 5 Anos...")
         
         ano_limite = datetime.now().year - 5
         data_corte = f"{ano_limite}-01-01T00:00:00"
@@ -177,7 +238,7 @@ async def atualizar_posicoes_exatas():
             "query": {
                 "bool": {
                     "must": [ 
-                        { "term": { "codigo_central_reguladora": "500830" } },
+                        { "term": { "codigo_central_reguladora": CODIGO_MUNICIPIO } },
                         { "range": { "data_solicitacao": { "gte": data_corte } } },
                         {
                             "bool": {
@@ -210,7 +271,7 @@ async def atualizar_posicoes_exatas():
         url_base = URL_SOLICITACOES_SISREG
         url_raiz_scroll = "https://sisreg-es.saude.gov.br/_search/scroll"
 
-        async with httpx.AsyncClient(timeout=60.0, verify=False) as client:
+        async with httpx.AsyncClient(timeout=60.0, verify=VERIFY_SSL) as client:
             resp = await client.post(
                 f"{url_base}/_search?scroll=2m", 
                 json=payload, 
@@ -219,7 +280,7 @@ async def atualizar_posicoes_exatas():
             )
             
             if resp.status_code != 200:
-                print(f"[CRON ERRO] O Governo rejeitou a abertura do Scroll. Status: {resp.status_code}", flush=True)
+                logger.error(f"[CRON ERRO] O Governo rejeitou a abertura do Scroll. Status: {resp.status_code}")
                 return
 
             dados = resp.json()
@@ -232,7 +293,7 @@ async def atualizar_posicoes_exatas():
             registros_totais.extend(hits)
             
             paginas_processadas = 1
-            print(f"[CRON] Página {paginas_processadas} processada. Acumulado: {len(registros_totais)} | Únicos: {len(ids_unicos_controle)}", flush=True)
+            logger.info(f"[CRON] Página {paginas_processadas} processada. Acumulado: {len(registros_totais)} | Únicos: {len(ids_unicos_controle)}")
             
             while hits and len(hits) > 0 and scroll_id:
                 try:
@@ -244,7 +305,7 @@ async def atualizar_posicoes_exatas():
                     )
                     
                     if resp_scroll.status_code != 200:
-                        print(f"[CRON AVISO] Interrompendo paginação. Status HTTP: {resp_scroll.status_code}", flush=True)
+                        logger.warning(f"[CRON AVISO] Interrompendo paginação. Status HTTP: {resp_scroll.status_code}")
                         break
 
                     dados_scroll = resp_scroll.json()
@@ -258,12 +319,12 @@ async def atualizar_posicoes_exatas():
                         
                         registros_totais.extend(hits)
                         paginas_processadas += 1
-                        print(f"[CRON] Página {paginas_processadas} processada. Acumulado: {len(registros_totais)} | Únicos: {len(ids_unicos_controle)}", flush=True)
+                        logger.info(f"[CRON] Página {paginas_processadas} processada. Acumulado: {len(registros_totais)} | Únicos: {len(ids_unicos_controle)}")
                     else:
                         break
                         
                 except Exception as e_loop:
-                    print(f"[CRON ERRO NO LOOP] Falha ao ler página {paginas_processadas + 1}: {e_loop}", flush=True)
+                    logger.error(f"[CRON ERRO NO LOOP] Falha ao ler página {paginas_processadas + 1}: {e_loop}")
                     break
             
             if scroll_id:
@@ -271,7 +332,7 @@ async def atualizar_posicoes_exatas():
                     await client.request("DELETE", url_raiz_scroll, json={"scroll_id": scroll_id}, headers={"Content-Type": "application/json"}, auth=(USUARIO, SENHA))
                 except: pass
 
-        print(f"[CRON] Extração concluída! Total Geral: {len(registros_totais)} | Total Real Único: {len(ids_unicos_controle)}", flush=True)
+        logger.info(f"[CRON] Extração concluída! Total Geral: {len(registros_totais)} | Total Real Único: {len(ids_unicos_controle)}")
 
         filas_por_procedimento = {}
         for hit in registros_totais:
@@ -312,10 +373,10 @@ async def atualizar_posicoes_exatas():
         global ULTIMA_ATUALIZACAO_SNAPSHOT
         ULTIMA_ATUALIZACAO_SNAPSHOT = datetime.now().timestamp()
         
-        print(f"[CRON] Snapshot impecável! {len(CACHE_POSICOES_EXATAS)} pacientes divididos em {len(filas_por_procedimento)} filas distintas na memória.", flush=True)
+        logger.info(f"[CRON] Snapshot impecável! {len(CACHE_POSICOES_EXATAS)} pacientes divididos em {len(filas_por_procedimento)} filas distintas na memória.")
 
     except Exception as e:
-        print(f"[CRON ERRO CRÍTICO] Falha catastrófica na Scroll API: {e}", flush=True)
+        logger.error(f"[CRON ERRO CRÍTICO] Falha catastrófica na Scroll API: {e}")
 
 def gerar_mock_supremo_testes(fase_validacao, nome_mae_digitado):
     if fase_validacao:
@@ -448,6 +509,46 @@ def gerar_mock_supremo_testes(fase_validacao, nome_mae_digitado):
         }
     ]
 
+def traduzir_status_py(status_raw, tipo_registro):
+    st = str(status_raw).upper().strip()
+    
+    if st in PLANILHA_STATUS_TRADUCAO: return PLANILHA_STATUS_TRADUCAO[st]
+    
+    if tipo_registro == "HOSPITALAR":
+        if "APROVADA" in st: return "Cirurgia Aprovada / Agendada"
+        if "NEGADA" in st: return "Solicitação de cirurgia negada"
+        if "CANCELADA" in st: return "Cirurgia Cancelada"
+        if "DEVOLVIDA" in st: return "Devolvida para ajustes médicos"
+        if "REENVIADA" in st: return "Reenviada para análise hospitalar"
+        if "TROCA" in st: return "Troca de procedimento solicitada"
+        if "PENDENTE" in st: return "Pendente de análise hospitalar"
+    if "FALTA" in st or "COMPARECEU" in st: return "Paciente não compareceu"
+    if "CANCELAD" in st or "NEGAD" in st: return "Solicitação Cancelada"
+    if "DEVOLVID" in st: return "Devolvida pela regulação para correção"
+    if "REENVIAD" in st or "TROCA" in st: return "Reenviada para análise da regulação"
+    if "AGENDAMENT" in st or "AGENDAD" in st or "CONFIRMAD" in st or "AUTORIZAD" in st or "FINALIZAD" in st:
+        if "PENDENTE" in st: return "Agendada pendente de confirmação"
+        return "Agendada e Confirmada"
+    if "PENDENTE" in st or "AGUARDANDO" in st or "ESPERA" in st:
+        if "FILA" in st: return "Pendente de agendamento (Fila)"
+        return "Pendente de análise da regulação"
+    return st
+
+def get_situacao_label_py(status_traduzido):
+    st = str(status_traduzido).upper()
+    if "AGENDADA" in st or "CONFIRMADA" in st or "AUTORIZADA" in st or "APROVADA" in st: return "SUCESSO"
+    if "PENDENTE" in st or "AGUARDANDO" in st or "ESPERA" in st: return "PENDENTE"
+    return "OUTRO"
+
+def extrair_ano_py(data_str):
+    if not data_str: return ""
+    data_str = str(data_str)
+    if '-' in data_str: return data_str.split('-')[0]
+    if '/' in data_str:
+        partes = data_str.split('/')
+        if len(partes) == 3: return partes[2][:4]
+    return data_str[:4]
+
 @app.get("/api/consulta/{cpf_usuario}")
 async def consultar_cpf(cpf_usuario: str, nome_mae: str = Query(None)):
 
@@ -483,15 +584,19 @@ async def consultar_cpf(cpf_usuario: str, nome_mae: str = Query(None)):
             print("[API] Iniciando consulta assíncrona dupla ao Governo...", flush=True)
 
         async def fazer_requisicao(url, nome_busca):
-            async with httpx.AsyncClient(timeout=30.0, verify=False) as client:
+            async with httpx.AsyncClient(timeout=30.0, verify=VERIFY_SSL) as client:
                 try:
                     resp = await client.post(url + "/_search", json=payload, headers=headers, auth=auth)
                     if resp.status_code == 200:
                         hits = resp.json().get("hits", {}).get("hits", [])
-                        print(f"[API] {nome_busca} finalizadas: {len(hits)} encontradas.", flush=True)
+                        logger.info(f"[API] {nome_busca} finalizadas: {len(hits)} encontradas.")
                         return hits
+                except httpx.TimeoutException as e:
+                    logger.error(f"[ERRO] O servidor do governo demorou muito a responder em {nome_busca}: {e}")
+                except httpx.RequestError as e:
+                    logger.error(f"[ERRO] Falha de conexão de rede em {nome_busca}: {e}")
                 except Exception as e:
-                    print(f"[ERRO] Falha ao buscar {nome_busca}: {e}", flush=True)
+                    logger.error(f"[ERRO] Erro inesperado ao buscar {nome_busca}: {e}")
                 return []
 
         tarefas = [
@@ -576,68 +681,6 @@ async def consultar_cpf(cpf_usuario: str, nome_mae: str = Query(None)):
                 item["_source"]["tipo_registro"] = "HOSPITALAR"
             dados_brutos.extend(lista_hospitalar)
 
-        def traduzir_status_py(status_raw, tipo_registro):
-            st = str(status_raw).upper().strip()
-
-            planilha = {
-              "SOLICITAÇÃO / PENDENTE / REGULADOR": "Pendente de análise da regulação",
-              "SOLICITAÇÃO / DEVOLVIDA / REGULADOR": "Devolvida pela regulação para correção",
-              "SOLICITAÇÃO / NEGADA / REGULADOR": "Solicitação negada pela regulação",
-              "SOLICITAÇÃO / PENDENTE / FILA DE ESPERA": "Pendente de agendamento (Fila)",
-              "SOLICITAÇÃO / REENVIADA / REGULADOR": "Reenviada para análise da regulação",
-              "SOLICITAÇÃO / CANCELADA / SOLICITANTE": "Solicitação Cancelada",
-              "SOLICITAÇÃO / CANCELADA / REGULADOR": "Solicitação Cancelada",
-              "SOLICITAÇÃO / CANCELADA / COORDENADOR": "Solicitação Cancelada",
-              "AGENDAMENTO / PENDENTE CONFIRMAÇÃO / EXECUTANTE": "Agendada pendente de confirmação",
-              "AGENDAMENTO / CANCELADO / REGULADOR": "Solicitação Cancelada",
-              "AGENDAMENTO / CANCELADO / SOLICITANTE": "Solicitação Cancelada",
-              "AGENDAMENTO / CANCELADO / COORDENADOR": "Solicitação Cancelada",
-              "AGENDAMENTO / CANCELADO": "Solicitação Cancelada",
-              "AGENDAMENTO / FALTA / USUARIO": "Paciente não compareceu",
-              "FALTA": "Paciente não compareceu"
-            }
-            
-            if st in planilha: return planilha[st]
-            
-            if tipo_registro == "HOSPITALAR":
-                if "APROVADA" in st: return "Cirurgia Aprovada / Agendada"
-                if "NEGADA" in st: return "Solicitação de cirurgia negada"
-                if "CANCELADA" in st: return "Cirurgia Cancelada"
-                if "DEVOLVIDA" in st: return "Devolvida para ajustes médicos"
-                if "REENVIADA" in st: return "Reenviada para análise hospitalar"
-                if "TROCA" in st: return "Troca de procedimento solicitada"
-                if "PENDENTE" in st: return "Pendente de análise hospitalar"
-
-            if "FALTA" in st or "COMPARECEU" in st: return "Paciente não compareceu"
-            if "CANCELAD" in st or "NEGAD" in st: return "Solicitação Cancelada"
-            if "DEVOLVID" in st: return "Devolvida pela regulação para correção"
-            if "REENVIAD" in st or "TROCA" in st: return "Reenviada para análise da regulação"
-
-            if "AGENDAMENT" in st or "AGENDAD" in st or "CONFIRMAD" in st or "AUTORIZAD" in st or "FINALIZAD" in st:
-                if "PENDENTE" in st: return "Agendada pendente de confirmação"
-                return "Agendada e Confirmada"
-
-            if "PENDENTE" in st or "AGUARDANDO" in st or "ESPERA" in st:
-                if "FILA" in st: return "Pendente de agendamento (Fila)"
-                return "Pendente de análise da regulação"
-
-            return st
-
-        def get_situacao_label_py(status_traduzido):
-            st = str(status_traduzido).upper()
-            if "AGENDADA" in st or "CONFIRMADA" in st or "AUTORIZADA" in st or "APROVADA" in st: return "SUCESSO"
-            if "PENDENTE" in st or "AGUARDANDO" in st or "ESPERA" in st: return "PENDENTE"
-            return "OUTRO"
-
-        def extrair_ano_py(data_str):
-            if not data_str: return ""
-            data_str = str(data_str)
-            if '-' in data_str: return data_str.split('-')[0]
-            if '/' in data_str:
-                partes = data_str.split('/')
-                if len(partes) == 3: return partes[2][:4]
-            return data_str[:4]
-
         dados_finais = []
         ano_limite = datetime.now().year - 5
 
@@ -711,7 +754,7 @@ async def consultar_cpf(cpf_usuario: str, nome_mae: str = Query(None)):
 async def atualizar_cache_filas():
     global CACHE_FILAS
     try:
-        print("[CRON] Iniciando atualização diária das filas às 04:00 da manhã...", flush=True)
+        logger.info("[CRON] Iniciando atualização diária das filas às 04:00 da manhã...")
 
         payload = {
             "size": 10000, 
@@ -723,7 +766,7 @@ async def atualizar_cache_filas():
             "query": {
                 "bool": {
                     "must": [
-                        { "term": { "codigo_central_reguladora": "500830" } }
+                        { "term": { "codigo_central_reguladora": CODIGO_MUNICIPIO } }
                     ],
                     "should": [
                         { "match_phrase": { "status_solicitacao": "SOLICITAÇÃO / PENDENTE / REGULADOR" } },
@@ -735,7 +778,7 @@ async def atualizar_cache_filas():
             }
         }
 
-        async with httpx.AsyncClient(timeout=30.0, verify=False) as client:
+        async with httpx.AsyncClient(timeout=30.0, verify=VERIFY_SSL) as client:
             resp = await client.post(
                 f"{URL_SOLICITACOES_SISREG}/_search", 
                 json=payload, 
@@ -763,10 +806,10 @@ async def atualizar_cache_filas():
 
         CACHE_FILAS["dados_fila"] = dados_fila
         CACHE_FILAS["ultima_atualizacao"] = datetime.now().strftime("%d/%m/%Y às %H:%M")
-        print("[CRON] Cache das filas atualizado com sucesso!", flush=True)
+        logger.info("[CRON] Cache das filas atualizado com sucesso!")
 
     except Exception as e:
-        print(f"[CRON ERRO] Falha ao atualizar cache: {e}", flush=True)
+        logger.error(f"[CRON ERRO] Falha ao atualizar cache: {e}")
 
 @app.get("/api/filas-espera")
 async def obter_filas_espera():
@@ -775,7 +818,7 @@ async def obter_filas_espera():
 async def atualizar_cache_faltometro():
     global CACHE_FALTOMETRO
     try:
-        print("[CRON] Iniciando extração dos últimos 6 meses para o Faltômetro...", flush=True)
+        logger.info("[CRON] Iniciando extração dos últimos 6 meses para o Faltômetro...")
 
         hoje = datetime.now()
         dados_por_mes = {}
@@ -806,7 +849,7 @@ async def atualizar_cache_faltometro():
                 "query": {
                     "bool": {
                         "must": [
-                            { "term": { "codigo_central_reguladora": "500830" } },
+                            { "term": { "codigo_central_reguladora": CODIGO_MUNICIPIO } },
                             {
                                 "range": {
                                     "data_marcacao": {
@@ -820,7 +863,7 @@ async def atualizar_cache_faltometro():
                 }
             }
 
-            async with httpx.AsyncClient(timeout=30.0, verify=False) as client:
+            async with httpx.AsyncClient(timeout=30.0, verify=VERIFY_SSL) as client:
                 resp = await client.post(
                     f"{URL_MARCACOES_SISREG}/_search", 
                     json=payload, 
@@ -881,10 +924,10 @@ async def atualizar_cache_faltometro():
         CACHE_FALTOMETRO["historico_meses"] = cache_final
         CACHE_FALTOMETRO["ultima_atualizacao"] = datetime.now().strftime("%d/%m/%Y às %H:%M")
         
-        print(f"[CRON] Faltômetro atualizado! Meses processados: {list(cache_final.keys())}", flush=True)
+        logger.info(f"[CRON] Faltômetro atualizado! Meses processados: {list(cache_final.keys())}")
 
     except Exception as e:
-        print(f"[CRON ERRO] Falha ao processar Faltômetro: {e}", flush=True)
+        logger.error(f"[CRON ERRO] Falha ao processar Faltômetro: {e}")
 
 @app.get("/api/faltometro")
 async def obter_faltometro():
@@ -894,38 +937,28 @@ async def boot_filas():
     try: 
         await atualizar_cache_filas()
     except Exception as e: 
-        print(f"[BOOT ERRO] Filas: {type(e).__name__} - {e}", flush=True)
+        logger.error(f"[BOOT ERRO] Filas: {type(e).__name__} - {e}")
 
 async def boot_faltometro():
     await asyncio.sleep(5)
     try: 
         await atualizar_cache_faltometro()
     except Exception as e: 
-        print(f"[BOOT ERRO] Faltômetro: {type(e).__name__} - {e}", flush=True)
+        logger.error(f"[BOOT ERRO] Faltômetro: {type(e).__name__} - {e}")
 
 async def boot_posicoes():
     await asyncio.sleep(1)
     try: 
         await atualizar_posicoes_exatas()
     except Exception as e: 
-        print(f"[BOOT ERRO] Posições Exatas: {type(e).__name__} - {e}", flush=True)
+        logger.error(f"[BOOT ERRO] Posições Exatas: {type(e).__name__} - {e}")
 
 async def inicializacao_assincrona():
-    print("[BOOT] Disparando extrações paralelas em cascata...", flush=True)
+    logger.info("[BOOT] Disparando extrações paralelas em cascata...")
     asyncio.create_task(boot_filas())
     asyncio.create_task(boot_faltometro())
     asyncio.create_task(boot_posicoes())
-    print("[BOOT] Tarefas enviadas para o background! O servidor já está livre para responder.", flush=True)
-
-@app.on_event("startup")
-async def iniciar_agendador():
-    scheduler = BackgroundScheduler()
-
-    scheduler.add_job(lambda: asyncio.run(atualizar_cache_filas()), 'cron', hour=4, minute=0)
-    scheduler.add_job(lambda: asyncio.run(atualizar_cache_faltometro()), 'cron', hour=4, minute=15)
-    scheduler.add_job(lambda: asyncio.run(atualizar_posicoes_exatas()), 'cron', hour=4, minute=30)
-    scheduler.start()    
-    asyncio.create_task(inicializacao_assincrona())
+    logger.info("[BOOT] Tarefas enviadas para o background! O servidor já está livre para responder.")
 
 @app.get("/api/status-snapshot")
 async def obter_status_snapshot():
